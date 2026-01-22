@@ -1,7 +1,5 @@
 //declaration for tensor metadata
 
-use std::alloc::Layout;
-
 pub struct TensorMeta {
     pub dtype: DType, //data type stored in the tensor
     pub shape: Vec<usize>, //shape of tensor (dimensions)
@@ -9,17 +7,20 @@ pub struct TensorMeta {
 }
 
 impl TensorMeta {
-    pub fn new(dtype: DType, shape: Vec<usize>,layout: StorageLayout) -> Self {
+    /***
+    Constructor for TensorMeta object
+     */
+    pub fn new(dtype: DType, shape: Vec<usize>,layout: StorageLayout) -> Result<Self,&'static str> {
         //creates a new tensor meta instance.
         let tensor_meta = TensorMeta{dtype, shape, layout};
-        match tensor_meta.validate() {
-            Ok(_) => {}
-            Err(_) => {}
-        };
-        tensor_meta
+        tensor_meta.validate()?;
+        Ok(tensor_meta)
     }
 
-    pub fn number_elements(&self) -> Result<usize,&'static str> {
+    /***
+    Calculates the number of elements in a given tensor using its shape dimensions
+     */
+    pub fn num_elements(&self) -> Result<usize,&'static str> {
         //find the number of elements in our tensor using this.
         let mut total_elements = 1usize;
         for dim in &self.shape {
@@ -29,12 +30,21 @@ impl TensorMeta {
         Ok(total_elements)
     }
 
+    /***
+    Returns the total size of the object. It is defined by number of elements * size in bytes of each element
+     */
     pub fn total_byte_size(&self) -> Result<usize,&'static str> {
-        let total_elements = self.number_elements()?;
+        let total_elements = self.num_elements()?;
         total_elements
             .checked_mul(self.dtype.size_bytes())
             .ok_or("tensor byte size overflow")
     }
+    /***
+    Validates whether a given tensor is structurally correct by:
+    1. verifies it exists and has proper dimensionality
+    2. verifies that none of the dimensions are 0
+    3. verifies that there is no overflow in regard to usize and its total size in bytes.
+     */
     pub fn validate(&self) -> Result<(),&'static str> {
         //all dimensions are non zero, non zero shape length, number of elements are equal to
         // product(shape) * size_in_bytes(dtype)
@@ -73,5 +83,42 @@ impl DType {
 
 pub enum StorageLayout{
     RowMajor,
-    ColMajor,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_meta_valid() {
+        let meta = TensorMeta::new(
+            DType::F32,
+            vec![4, 4],
+            StorageLayout::RowMajor
+        ).unwrap();
+
+        assert_eq!(meta.total_byte_size().unwrap(), 64);
+    }
+
+    #[test]
+    fn test_meta_zero_dim_fails() {
+        let meta = TensorMeta::new(
+            DType::F32,
+            vec![4, 0],
+            StorageLayout::RowMajor
+        );
+
+        assert!(meta.is_err());
+    }
+
+    #[test]
+    fn test_meta_overflow_fails() {
+        let meta = TensorMeta::new(
+            DType::F64,
+            vec![usize::MAX, 2],
+            StorageLayout::RowMajor
+        );
+
+        assert!(meta.is_err());
+    }
 }

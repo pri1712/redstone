@@ -1,2 +1,2 @@
-mod meta;
-mod tensor;
+pub mod meta;
+pub mod tensor;

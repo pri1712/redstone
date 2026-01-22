@@ -1,7 +1,7 @@
 use crate::tensor::meta::TensorMeta;
 
 //define the full tensor object to be stored
-struct Tensor {
+pub struct Tensor {
     metadata: TensorMeta,
     data: Vec<u8>
 }
@@ -20,7 +20,7 @@ impl Tensor {
 #[cfg(test)]
 mod tests{
     use super::*;
-    use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
+    use crate::tensor::meta::{DType, StorageLayout};
     #[test]
     fn test_tensor_new_valid() {
         let meta = TensorMeta::new(

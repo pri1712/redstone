@@ -1,9 +1,9 @@
 //declaration for tensor metadata
 
 pub struct TensorMeta {
-    pub dtype: DType, //data type stored in the tensor
-    pub shape: Vec<usize>, //shape of tensor (dimensions)
-    pub layout: StorageLayout //row major or column major in memory for faster access.
+    dtype: DType, //data type stored in the tensor
+    shape: Vec<usize>, //shape of tensor (dimensions)
+    layout: StorageLayout //row major or column major in memory for faster access.
 }
 
 impl TensorMeta {
@@ -60,6 +60,11 @@ impl TensorMeta {
         self.total_byte_size()?;
         Ok(())
     }
+
+    //getters for all the params.
+    pub fn dtype(&self) -> &DType { &self.dtype }
+    pub fn shape(&self) -> &[usize] { &self.shape }
+    pub fn layout(&self) -> &StorageLayout { &self.layout }
 
 }
 

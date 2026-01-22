@@ -1,2 +1,2 @@
 # redstone
-Distributed block store with high availability
+Distributed block store with high consistency.

@@ -1,7 +1,7 @@
 use crate::tensor::meta::TensorMeta;
 
 //define the full tensor object to be stored
-struct Tensor {
+pub struct Tensor {
     metadata: TensorMeta,
     data: Vec<u8>
 }

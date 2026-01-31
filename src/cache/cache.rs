@@ -10,6 +10,7 @@ pub struct Cache {
 #[derive(Debug, PartialEq)]
 pub enum CacheError {
     KeyAlreadyExists,
+    InvalidTensor,
 }
 
 impl Cache {

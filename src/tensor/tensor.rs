@@ -15,6 +15,12 @@ impl Tensor {
         }
         Ok(Self { metadata, data })
     }
+    /***
+    Returns size in bytes of the tensor object
+    */
+    pub fn byte_size(&self) -> usize {
+        self.metadata.total_byte_size().unwrap()
+    }
 }
 
 #[cfg(test)]

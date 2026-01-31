@@ -11,9 +11,9 @@ pub struct TensorCache {
 }
 
 impl TensorCache {
-    pub fn new() -> Self {
+    pub fn new(max_cache_size: u64) -> Self {
         Self {
-            cache: Cache::new(),
+            cache: Cache::new(max_cache_size).unwrap(),
         }
     }
 
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn put_then_get_works() {
-        let cache = TensorCache::new();
+        let cache = TensorCache::new(128);
 
         let meta = make_valid_meta();
         let data = vec![0u8; 16];
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn invalid_tensor_is_rejected() {
-        let cache = TensorCache::new();
+        let cache = TensorCache::new(128);
 
         let meta = make_valid_meta();
         let data = vec![0u8; 15];
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn duplicate_key_is_rejected() {
-        let cache = TensorCache::new();
+        let cache = TensorCache::new(128);
 
         let meta1 = make_valid_meta();
         let data1 = vec![0u8; 16];
@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn get_missing_returns_none() {
-        let cache = TensorCache::new();
+        let cache = TensorCache::new(128);
         assert!(cache.get("missing").is_none());
     }
 }

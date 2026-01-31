@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-
+use std::thread;
 use crate::tensor::tensor::Tensor;
 
 pub struct Cache {
@@ -88,5 +88,27 @@ mod tests {
     fn test_cache_get_missing_returns_none() {
         let cache = Cache::new();
         assert!(cache.get("missing").is_none());
+    }
+
+    #[test]
+    fn test_concurrent_reads() {
+        let cache = Arc::new(Cache::new());
+        let tensor = make_tensor();
+        cache.put("shared_key".to_string(), tensor).unwrap();
+
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let cache_clone = Arc::clone(&cache);
+                thread::spawn(move || {
+                    for _ in 0..100 {
+                        assert!(cache_clone.get("shared_key").is_some());
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
     }
 }

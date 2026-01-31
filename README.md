@@ -1,2 +1,2 @@
 # redstone
-Distributed block store with high consistency.
+Distributed tensor cache in rust.

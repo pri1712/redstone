@@ -5,6 +5,53 @@ use std::sync::{Arc, RwLock};
 use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
 
+pub struct Cache {
+    inner: RwLock<CacheInner>,
+}
+
+impl Cache {
+    pub fn new(max_size: u64) -> Result<Self, CacheError> {
+        if max_size == 0 {
+            return Err(CacheError::InvalidSize);
+        }
+        Ok(Self {
+            inner: RwLock::new(CacheInner {
+                map: HashMap::new(),
+                head: None,
+                tail: None,
+                current_cache_size_bytes: 0,
+                max_cache_size_bytes: max_size,
+                hits: 0,
+                misses: 0,
+                evictions: 0,
+            })
+        })
+    }
+
+    pub fn put(&self, key: String, tensor: Tensor) -> Result<(), CacheError> {
+        let mut inner = self.inner.write().unwrap();
+        inner.put(key, tensor)
+    }
+
+    pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
+        let mut inner = self.inner.write().unwrap();
+        inner.get(key)
+    }
+
+    pub fn stats(&self) -> CacheStats {
+        let inner = self.inner.read().unwrap();
+        CacheStats {
+            entries: inner.map.len(),
+            memory_used: inner.current_cache_size_bytes,
+            memory_limit: inner.max_cache_size_bytes,
+            hits: inner.hits,
+            misses: inner.misses,
+            evictions: inner.evictions,
+        }
+    }
+
+}
+
 struct LruNode {
     key: String,
     prev: Option<NonNull<LruNode>>,
@@ -50,19 +97,34 @@ impl CacheInner {
             self.evict_key();
 
         }
+
+        if self.current_cache_size_bytes + tensor_size > self.max_cache_size_bytes {
+            return Err(CacheError::OutOfMemory);
+        }
+        let node = Box::new(LruNode::new(key.clone()));
+
+        let node_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(node)) };
+        self.attach_node_to_head(node_ptr);
+        self.map.insert(key, (Arc::new(tensor), node_ptr, tensor_size));
+        self.current_cache_size_bytes += tensor_size;
         Ok(())
     }
 
     fn get(&mut self, key: &str) -> Option<Arc<Tensor>> {
-        let (tensor, node_ptr) = {
-            let (tensor, node_ptr, _size) = self.map.get(key)?;
-            (Arc::clone(tensor), *node_ptr)
-        };
+        let entry = self.map.get(key);
+        if entry.is_none() {
+            self.misses += 1;
+            return None;
+        }
+
+        let (tensor, node_ptr, _) = entry.unwrap();
+        let tensor = Arc::clone(tensor);
+        let node_ptr = *node_ptr;
 
         self.detach_node(node_ptr);
         self.attach_node_to_head(node_ptr);
-
         self.hits += 1;
+
         Some(tensor)
     }
 
@@ -131,52 +193,6 @@ impl CacheInner {
         }
     }
 }
-pub struct Cache {
-    inner: RwLock<CacheInner>,
-}
-
-impl Cache {
-    pub fn new(max_size: u64) -> Result<Self, CacheError> {
-        if max_size == 0 {
-            return Err(CacheError::InvalidSize);
-        }
-        Ok(Self {
-            inner: RwLock::new(CacheInner {
-                map: HashMap::new(),
-                head: None,
-                tail: None,
-                current_cache_size_bytes: 0,
-                max_cache_size_bytes: max_size,
-                hits: 0,
-                misses: 0,
-                evictions: 0,
-            })
-        })
-    }
-
-    pub fn put(&self, key: String, tensor: Tensor) -> Result<(), CacheError> {
-        let mut inner = self.inner.write().unwrap();
-        inner.put(key, tensor)
-    }
-
-    pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
-        let mut inner = self.inner.write().unwrap();
-        inner.get(key)
-    }
-
-    pub fn stats(&self) -> CacheStats {
-        let inner = self.inner.read().unwrap();
-        CacheStats {
-            entries: inner.map.len(),
-            memory_used: inner.current_cache_size_bytes,
-            memory_limit: inner.max_cache_size_bytes,
-            hits: inner.hits,
-            misses: inner.misses,
-            evictions: inner.evictions,
-        }
-    }
-
-}
 
 #[derive(Debug, PartialEq)]
 pub enum CacheError {
@@ -191,8 +207,6 @@ mod tests {
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
     use crate::tensor::tensor::Tensor;
-    use std::sync::Arc;
-    use std::thread;
 
     fn make_tensor() -> Tensor {
         let meta = TensorMeta::new(
@@ -226,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_cache_duplicate_put_fails() {
-        let cache = Cache::new(64).unwrap();
+        let cache = Cache::new(256).unwrap();
         let key = "dup_key".to_string();
 
         let tensor1 = make_tensor();
@@ -282,13 +296,11 @@ mod tests {
 
         cache.put("key1".to_string(), tensor1).unwrap();
 
-        let tensor2 = make_tensor(); // 64 bytes - would exceed 100
+        let tensor2 = make_tensor();
 
-        // This now SUCCEEDS because key1 gets evicted
         let result = cache.put("key2".to_string(), tensor2);
         assert!(result.is_ok());
 
-        // key1 should be evicted
         assert!(cache.get("key1").is_none());
         assert!(cache.get("key2").is_some());
 
@@ -298,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_lru_eviction_order() {
-        let cache = Cache::new(150).unwrap(); // Can hold ~2 tensors
+        let cache = Cache::new(150).unwrap();
 
         let tensor1 = make_tensor();
         let tensor2 = make_tensor();
@@ -316,22 +328,22 @@ mod tests {
         assert!(cache.get("key3").is_some());
     }
 
-    // #[test]
-    // fn test_stats_tracking() {
-    //     let cache = Cache::new(200).unwrap();
-    //
-    //     let tensor = make_tensor();
-    //     cache.put("key1".to_string(), tensor).unwrap();
-    //
-    //     cache.get("key1"); // Hit
-    //     cache.get("missing"); // Miss
-    //
-    //     let stats = cache.stats();
-    //     assert_eq!(stats.hits, 1);
-    //     assert_eq!(stats.misses, 1);
-    //     assert_eq!(stats.hit_rate(), 0.5);
-    //     assert_eq!(stats.entries, 1);
-    // }
+    #[test]
+    fn test_stats_tracking() {
+        let cache = Cache::new(200).unwrap();
+
+        let tensor = make_tensor();
+        cache.put("key1".to_string(), tensor).unwrap();
+
+        cache.get("key1");
+        cache.get("missing");
+
+        let stats = cache.stats();
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hit_rate(), 0.5);
+        assert_eq!(stats.entries, 1);
+    }
 
     // #[test]
     // fn test_delete() {

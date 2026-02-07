@@ -2,7 +2,7 @@ use std::sync::Arc;
 mod tensor;
 mod cache;
 
-use crate::cache::cache::{Cache, CacheError};
+use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::TensorMeta;
 use crate::tensor::tensor::Tensor;
 

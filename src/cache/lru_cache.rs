@@ -38,6 +38,21 @@ impl Cache {
         inner.get(key)
     }
 
+    pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
+        let mut inner = self.inner.write().unwrap();
+        inner.remove(key)
+    }
+
+    pub fn exists(&self, key: &str) -> bool {
+        let inner = self.inner.read().unwrap();
+        inner.map.contains_key(key)
+    }
+
+    pub fn clear(&self) {
+        let mut inner = self.inner.write().unwrap();
+        inner.clear();
+    }
+
     pub fn stats(&self) -> CacheStats {
         let inner = self.inner.read().unwrap();
         CacheStats {
@@ -128,6 +143,17 @@ impl CacheInner {
         Some(tensor)
     }
 
+    fn remove(&mut self, key: &str) -> Option<Arc<Tensor>> {
+        if let Some((tensor, _node_ptr, _node_size)) = self.map.remove(key) {
+            self.detach_node(_node_ptr);
+            unsafe { Box::from_raw(_node_ptr.as_ptr()) };
+            self.current_cache_size_bytes -= _node_size;
+            Some(tensor)
+        } else {
+            None
+        }
+    }
+
  /// evict least recently used key
     pub fn evict_key(&mut self) {
         if let Some(tail_ptr) = self.tail {
@@ -191,6 +217,24 @@ impl CacheInner {
                 self.tail = Some(node_ptr);
             }
         }
+    }
+
+    fn clear(&mut self) {
+        while let Some(tail_ptr) = self.tail {
+            self.detach_node(tail_ptr);
+            unsafe { Box::from_raw(tail_ptr.as_ptr()) };
+        }
+
+        self.map.clear();
+        self.current_cache_size_bytes = 0;
+        self.head = None;
+        self.tail = None;
+    }
+}
+
+impl Drop for CacheInner {
+    fn drop(&mut self) {
+        self.clear();
     }
 }
 
@@ -345,38 +389,38 @@ mod tests {
         assert_eq!(stats.entries, 1);
     }
 
-    // #[test]
-    // fn test_delete() {
-    //     let cache = Cache::new(200).unwrap();
-    //
-    //     let tensor = make_tensor();
-    //     cache.put("key1".to_string(), tensor).unwrap();
-    //
-    //     assert!(cache.exists("key1"));
-    //
-    //     let deleted = cache.delete("key1");
-    //     assert!(deleted.is_some());
-    //     assert!(!cache.exists("key1"));
-    //
-    //     let stats = cache.stats();
-    //     assert_eq!(stats.entries, 0);
-    // }
+    #[test]
+    fn test_delete() {
+        let cache = Cache::new(200).unwrap();
 
-    // #[test]
-    // fn test_clear() {
-    //     let cache = Cache::new(200).unwrap();
-    //
-    //     cache.put("key1".to_string(), make_tensor()).unwrap();
-    //     cache.put("key2".to_string(), make_tensor()).unwrap();
-    //
-    //     assert_eq!(cache.stats().entries, 2);
-    //
-    //     cache.clear();
-    //
-    //     let stats = cache.stats();
-    //     assert_eq!(stats.entries, 0);
-    //     assert_eq!(stats.memory_used, 0);
-    // }
+        let tensor = make_tensor();
+        cache.put("key1".to_string(), tensor).unwrap();
+
+        assert!(cache.exists("key1"));
+
+        let deleted = cache.delete("key1");
+        assert!(deleted.is_some());
+        assert!(!cache.exists("key1"));
+
+        let stats = cache.stats();
+        assert_eq!(stats.entries, 0);
+    }
+
+    #[test]
+    fn test_clear() {
+        let cache = Cache::new(200).unwrap();
+
+        cache.put("key1".to_string(), make_tensor()).unwrap();
+        cache.put("key2".to_string(), make_tensor()).unwrap();
+
+        assert_eq!(cache.stats().entries, 2);
+
+        cache.clear();
+
+        let stats = cache.stats();
+        assert_eq!(stats.entries, 0);
+        assert_eq!(stats.memory_used, 0);
+    }
 
     #[test]
     fn test_single_large_tensor_oom() {

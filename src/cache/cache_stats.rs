@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, PartialEq)]
 pub struct CacheStats {
     pub entries: usize,
     pub memory_used: u64,

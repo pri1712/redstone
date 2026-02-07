@@ -3,7 +3,7 @@ mod tensor;
 mod cache;
 
 use crate::cache::lru_cache::{Cache, CacheError};
-use crate::tensor::meta::TensorMeta;
+use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
 
 pub struct TensorCache {
@@ -17,25 +17,34 @@ impl TensorCache {
         }
     }
 
-    /***
-    Inserts a tensor into the cache.
-    It guarantees:
-    1. Immutable writes
-    2. Tensor validation before insertion, preventing corrupted writes
-    3. Atomic inserts
-     */
+    /// Put method for f32 data type. It internally implements the core put method.
+    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
+        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
+            .map_err(|_| CacheError::InvalidTensorMetadata)?;
+
+        let bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const u8,
+                data.len() * size_of::<f32>()).to_vec()
+        };
+
+        self.put(key, meta, bytes)
+    }
+
+    /// Inserts a tensor into the cache.
+    /// It guarantees:
+    /// 1. Immutable writes
+    /// 2. Tensor validation before insertion, preventing corrupted writes
+    /// 3. Atomic inserts
     pub fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>, ) -> Result<(), CacheError> {
         let tensor = Tensor::new(meta, data)
             .map_err(|_| CacheError::InvalidTensor)?;
         self.cache.put(key, tensor)
     }
 
-    /***
-    Retrieves a tensor by key.
-    It guarantees:
-    1. Atomic reads
-    2. Idempotent reads
-     */
+    ///     Retrieves a tensor by key.
+    ///     It guarantees:
+    ///     1. Atomic reads
+    ///     2. Idempotent reads
     pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
         self.cache.get(key)
     }

@@ -9,7 +9,10 @@ pub struct Cache {
     inner: RwLock<CacheInner>,
 }
 
+/// Implementation of a cache for tensors. The key is a String and value is a complex tensor object.
 impl Cache {
+
+    /// Constructor for the cache.
     pub fn new(max_size: u64) -> Result<Self, CacheError> {
         if max_size == 0 {
             return Err(CacheError::InvalidSize);
@@ -28,31 +31,40 @@ impl Cache {
         })
     }
 
+    /// Insert a kv pair into the cache, it fails if the key already exists.
+    /// This is to preserve the guarantee of write once read many times, simplifying operations.
     pub fn put(&self, key: String, tensor: Tensor) -> Result<(), CacheError> {
         let mut inner = self.inner.write().unwrap();
         inner.put(key, tensor)
     }
 
+    /// Get the value for a given key, it returns None in case no entry exists in the cache for the
+    /// given key. Returns the corresponding tensor in the other case.
     pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
         let mut inner = self.inner.write().unwrap();
         inner.get(key)
     }
 
+    /// Delete a key from the cache,it returns None in case no entry exists in the cache for the
+    /// given key. Returns the deleted tensor in the other case.
     pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
         let mut inner = self.inner.write().unwrap();
         inner.remove(key)
     }
 
+    /// Checks if an entry exists for a given key.
     pub fn exists(&self, key: &str) -> bool {
         let inner = self.inner.read().unwrap();
         inner.map.contains_key(key)
     }
 
+    /// Clears the entire cache, all existing entries are dropped.
     pub fn clear(&self) {
         let mut inner = self.inner.write().unwrap();
         inner.clear();
     }
 
+    /// Initializes the structure to get observability into cache operations.
     pub fn stats(&self) -> CacheStats {
         let inner = self.inner.read().unwrap();
         CacheStats {
@@ -73,6 +85,8 @@ struct LruNode {
     next: Option<NonNull<LruNode>>,
 }
 impl LruNode {
+    /// Initialize the LruNode structure, each and every entry in the cache has an entry in this
+    /// LRU structure. Each entry corresponds to a singular LruNode entry (based on the key).
     fn new(key: String) -> Self {
         Self {
             key,
@@ -100,6 +114,8 @@ struct CacheInner {
 }
 
 impl CacheInner {
+    ///Implements the actual put operation on the cache. Returns CacheError::KeyAlreadyExists in case
+    /// the key already exists in the cache. Returns Ok() otherwise.
     pub fn put(&mut self, key: String, tensor: Tensor) -> Result<(), CacheError> {
         if self.map.contains_key(&key) {
             return Err(CacheError::KeyAlreadyExists);
@@ -125,6 +141,7 @@ impl CacheInner {
         Ok(())
     }
 
+    ///Implements the get operation for the cache.
     fn get(&mut self, key: &str) -> Option<Arc<Tensor>> {
         let entry = self.map.get(key);
         if entry.is_none() {
@@ -170,6 +187,8 @@ impl CacheInner {
         }
     }
 
+    /// Detaches node described by the node_ptr pointer, based on its position in the linked list
+    /// describing the cache.
     fn detach_node(&mut self,node_ptr: NonNull<LruNode>) {
         //3 cases, when node is head,middle node or tail.
         unsafe {
@@ -200,6 +219,7 @@ impl CacheInner {
         }
     }
 
+    /// Attaches node given by node_ptr to the head
     fn attach_node_to_head(&mut self,node_ptr: NonNull<LruNode>) {
         unsafe {
             let node = &mut *node_ptr.as_ptr();
@@ -248,6 +268,7 @@ pub enum CacheError {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
     use crate::tensor::tensor::Tensor;
@@ -302,30 +323,30 @@ mod tests {
         assert!(cache.get("missing").is_none());
     }
 
-    // #[test]
-    // fn test_concurrent_reads() {
-    //     let cache = Arc::new(Cache::new(64).unwrap());
-    //     let tensor = make_tensor();
-    //
-    //     cache
-    //         .put("shared_key".to_string(), tensor)
-    //         .unwrap();
-    //
-    //     let handles: Vec<_> = (0..10)
-    //         .map(|_| {
-    //             let cache_clone = Arc::clone(&cache);
-    //             thread::spawn(move || {
-    //                 for _ in 0..100 {
-    //                     assert!(cache_clone.get("shared_key").is_some());
-    //                 }
-    //             })
-    //         })
-    //         .collect();
-    //
-    //     for h in handles {
-    //         h.join().unwrap();
-    //     }
-    // }
+    #[test]
+    fn test_concurrent_reads() {
+        let cache = Arc::new(Cache::new(64).unwrap());
+        let tensor = make_tensor();
+
+        cache
+            .put("shared_key".to_string(), tensor)
+            .unwrap();
+
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let cache_clone = Arc::clone(&cache);
+                thread::spawn(move || {
+                    for _ in 0..100 {
+                        assert!(cache_clone.get("shared_key").is_some());
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
 
     #[test]
     fn test_invalid_size() {
@@ -335,8 +356,8 @@ mod tests {
     #[test]
     fn test_out_of_memory_with_eviction() {
 
-        let cache = Cache::new(100).unwrap(); // 100 bytes total
-        let tensor1 = make_tensor(); // 64 bytes
+        let cache = Cache::new(100).unwrap();
+        let tensor1 = make_tensor();
 
         cache.put("key1".to_string(), tensor1).unwrap();
 

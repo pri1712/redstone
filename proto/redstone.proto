@@ -1,0 +1,81 @@
+// Redstone Distributed Tensor Cache Protocol
+syntax = "proto3";
+package redstone;
+
+service RedStone {
+  rpc Get(GetRequest) returns (GetResponse);
+
+  rpc Put(PutRequest) returns (PutResponse);
+
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+  rpc GetStats(StatsRequest) returns (StatsResponse);
+}
+
+enum DType {
+  DTYPE_UNSPECIFIED = 0;
+  F32 = 1;
+  F64 = 2;
+  I32 = 3;
+  I64 = 4;
+  U8 = 5;
+}
+
+enum StorageLayout {
+  STORAGE_LAYOUT_UNSPECIFIED = 0;
+  ROW_MAJOR = 1;
+  COLUMN_MAJOR = 2;
+}
+
+//expose tensormeta over the wire for now. can be cleaned up later.
+message TensorMeta {
+  DType dtype = 1;
+  repeated uint64 shape = 2;
+  StorageLayout layout = 3;
+}
+
+
+message GetRequest {
+  string key = 1;
+}
+
+
+message GetResponse {
+  TensorMeta meta = 2;
+  bytes data = 3;
+}
+
+
+message PutRequest {
+  string key = 1;
+  TensorMeta meta = 2;
+  bytes data = 3;
+}
+
+
+message PutResponse {}
+
+
+message DeleteRequest {
+  string key = 1;
+}
+
+
+message DeleteResponse {
+  bool deleted = 1;
+}
+
+
+message StatsRequest {
+}
+
+message StatsResponse {
+  uint64 entries = 1;
+  uint64 memory_used = 2;
+  uint64 memory_limit = 3;
+  uint64 hits = 4;
+  uint64 misses = 5;
+  uint64 evictions = 6;
+  double hit_rate = 7;
+  double memory_utilization = 8;
+}

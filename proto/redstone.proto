@@ -9,8 +9,6 @@ service RedStone {
 
   rpc Delete(DeleteRequest) returns (DeleteResponse);
 
-  rpc Exists(ExistsRequest) returns (ExistsResponse);
-
   rpc GetStats(StatsRequest) returns (StatsResponse);
 }
 
@@ -29,6 +27,7 @@ enum StorageLayout {
   COLUMN_MAJOR = 2;
 }
 
+//expose tensormeta over the wire for now. can be cleaned up later.
 message TensorMeta {
   DType dtype = 1;
   repeated uint64 shape = 2;
@@ -42,7 +41,6 @@ message GetRequest {
 
 
 message GetResponse {
-  bool found = 1;
   TensorMeta meta = 2;
   bytes data = 3;
 }
@@ -55,21 +53,7 @@ message PutRequest {
 }
 
 
-message PutResponse {
-  bool success = 1;
-  string error_message = 2;
-  ErrorCode error_code = 3;
-}
-
-enum ErrorCode {
-  ERROR_CODE_UNSPECIFIED = 0;
-  OK = 1;
-  KEY_ALREADY_EXISTS = 2;
-  INVALID_TENSOR = 3;
-  INVALID_SIZE = 4;
-  OUT_OF_MEMORY = 5;
-  INTERNAL_ERROR = 6;
-}
+message PutResponse {}
 
 
 message DeleteRequest {
@@ -79,15 +63,6 @@ message DeleteRequest {
 
 message DeleteResponse {
   bool deleted = 1;
-}
-
-
-message ExistsRequest {
-  string key = 1;
-}
-
-message ExistsResponse {
-  bool exists = 1;
 }
 
 

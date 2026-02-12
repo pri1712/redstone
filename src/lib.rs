@@ -58,7 +58,6 @@ impl TensorCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 
     fn make_valid_meta() -> TensorMeta {
         TensorMeta::new(
@@ -71,7 +70,7 @@ mod tests {
 
     #[test]
     fn put_then_get_works() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta = make_valid_meta();
         let data = vec![0u8; 16];
@@ -84,10 +83,10 @@ mod tests {
 
     #[test]
     fn invalid_tensor_is_rejected() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta = make_valid_meta();
-        let data = vec![0u8; 15];
+        let data = vec![0u8; 15]; // invalid size
 
         let result = cache.put("bad".to_string(), meta, data);
         assert_eq!(result, Err(CacheError::InvalidTensor));
@@ -95,7 +94,7 @@ mod tests {
 
     #[test]
     fn duplicate_key_is_rejected() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta1 = make_valid_meta();
         let data1 = vec![0u8; 16];
@@ -110,7 +109,7 @@ mod tests {
 
     #[test]
     fn get_missing_returns_none() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
         assert!(cache.get("missing").is_none());
     }
 }

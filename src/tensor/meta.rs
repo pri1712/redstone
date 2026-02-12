@@ -72,7 +72,8 @@ pub enum DType{
     F32,
     F64,
     I32,
-    I64
+    I64,
+    U8,
 }
 
 impl DType {
@@ -82,12 +83,14 @@ impl DType {
             DType::F64 => 8,
             DType::I32 => 4,
             DType::I64 => 8,
+            DType::U8 => 1,
         }
     }
 }
 
 pub enum StorageLayout{
     RowMajor,
+    ColumnMajor,
 }
 
 #[cfg(test)]

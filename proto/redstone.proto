@@ -1,4 +1,4 @@
-// Redstone Distributed Tensor Cache Protocol
+// Redstone Distributed Tensor Cache grpc Protocol
 syntax = "proto3";
 package redstone;
 
@@ -27,7 +27,8 @@ enum StorageLayout {
   COLUMN_MAJOR = 2;
 }
 
-//expose tensormeta over the wire for now. can be cleaned up later.
+//expose tensormeta over the wire, the client is responsible for parsing the data from applications and creating the
+//tensor meta object.
 message TensorMeta {
   DType dtype = 1;
   repeated uint64 shape = 2;
@@ -66,8 +67,7 @@ message DeleteResponse {
 }
 
 
-message StatsRequest {
-}
+message StatsRequest {}
 
 message StatsResponse {
   uint64 entries = 1;

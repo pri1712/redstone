@@ -68,6 +68,8 @@ impl TensorMeta {
 
 }
 
+#[derive(Debug)]
+#[derive(PartialEq)]
 pub enum DType{
     F32,
     F64,
@@ -88,6 +90,8 @@ impl DType {
     }
 }
 
+#[derive(Debug)]
+#[derive(PartialEq)]
 pub enum StorageLayout{
     RowMajor,
     ColumnMajor,

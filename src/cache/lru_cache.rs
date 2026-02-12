@@ -9,6 +9,9 @@ pub struct Cache {
     inner: RwLock<CacheInner>,
 }
 
+unsafe impl Send for Cache {}
+unsafe impl Sync for Cache {}
+
 /// Implementation of a cache for tensors. The key is a String and value is a complex tensor object.
 impl Cache {
 

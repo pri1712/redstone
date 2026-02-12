@@ -1,11 +1,13 @@
 use std::sync::Arc;
-use crate::TensorCache;
 use tonic::{transport::Server, Request, Response, Status, Code};
-use crate::tensor::meta::{DType,StorageLayout,TensorMeta};
+use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse, StatsRequest, StatsResponse};
+use crate::proto::red_stone_server::{RedStone, RedStoneServer};
+use crate::proto;
 
-pub mod proto {
-    tonic::include_proto!("redstone");
-}
+use crate::TensorCache;
+use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
+use crate::CacheError;
+
 pub struct CacheServer {
     cache: Arc<TensorCache>,
 }
@@ -72,3 +74,100 @@ fn meta_to_proto(meta: &TensorMeta) -> proto::TensorMeta {
 }
 
 //server method definitions
+#[tonic::async_trait]
+impl RedStone for CacheServer {
+    /// Implementation for the GET method for the gRPC server.
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
+        let get_request = request.into_inner();
+        if let Some(tensor) = self.cache.get(&get_request.key) {
+            let meta = meta_to_proto(tensor.get_metadata());
+            Ok(Response::new(GetResponse{
+                meta: Some(meta),
+                data: tensor.get_data().to_vec(),
+            }))
+        } else {
+            Err(Status::not_found(format!("Key not found in cache: {}", get_request.key)))
+        }
+    }
+
+    async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
+        let put_request = request.into_inner();
+        let proto_meta = put_request.meta.ok_or_else(|| {
+            Status::invalid_argument("Missing tensor metadata")
+        })?;
+        let meta = proto_to_meta(&proto_meta)?;
+        match self.cache.put(put_request.key.clone(),meta,put_request.data) {
+            Ok(()) => Ok(Response::new(PutResponse{})),
+            Err(e) => {
+                match e {
+                    CacheError::KeyAlreadyExists => {
+                        Err(Status::new(
+                            Code::AlreadyExists,
+                            format!("Key already exists: {}", put_request.key)
+                        ))
+                    }
+                    CacheError::InvalidTensor => {
+                        Err(Status::invalid_argument("Invalid tensor data"))
+                    }
+                    CacheError::InvalidSize => {
+                        Err(Status::invalid_argument("Invalid tensor size"))
+                    }
+                    CacheError::OutOfMemory => {
+                        Err(Status::resource_exhausted("Cache is full"))
+                    }
+                    _ => {
+                        Err(Status::internal("Internal cache error"))
+                    }
+                }
+            }
+        }
+
+    }
+    async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
+       todo!()
+    }
+
+    async fn get_stats(&self, request: Request<StatsRequest>) -> Result<Response<StatsResponse>, Status> {
+        todo!()
+    }
+}
+
+pub async fn start_server(addr: String, cache_size: u64) -> Result<(), Box<dyn std::error::Error>> {
+    let addr = addr.parse()?;
+    let cache = Arc::new(TensorCache::new(cache_size));
+    let server = CacheServer::new(cache);
+
+    println!("Redstone Server listening on {}", addr);
+
+    Server::builder()
+        .add_service(RedStoneServer::new(server))
+        .serve(addr)
+        .await?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dtype_conversion() {
+        let dtype = DType::F32;
+        let proto = dtype_to_proto(&dtype);
+        assert_eq!(proto, proto::DType::F32 as i32);
+
+        let back = proto_to_dtype(proto).unwrap();
+        assert_eq!(back, DType::F32);
+    }
+
+    #[test]
+    fn test_layout_conversion() {
+        let layout = StorageLayout::RowMajor;
+        let proto = layout_to_proto(&layout);
+        assert_eq!(proto, proto::StorageLayout::RowMajor as i32);
+
+        let back = proto_to_layout(proto).unwrap();
+        assert_eq!(back, StorageLayout::RowMajor);
+    }
+}

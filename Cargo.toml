@@ -13,3 +13,10 @@ tonic-prost = "0.14.0"
 [build-dependencies]
 tonic-prost-build = "0.14"
 
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"

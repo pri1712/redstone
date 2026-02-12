@@ -1,8 +1,8 @@
 use std::sync::Arc;
 mod tensor;
 mod cache;
-mod server;
-mod client;
+pub mod server;
+pub mod client;
 use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;

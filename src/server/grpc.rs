@@ -115,8 +115,8 @@ impl RedStone for CacheServer {
                     CacheError::OutOfMemory => {
                         Err(Status::resource_exhausted("Cache is full"))
                     }
-                    _ => {
-                        Err(Status::internal("Internal cache error"))
+                    CacheError::InvalidTensorMetadata => {
+                        Err(Status::invalid_argument("Invalid tensor metadata"))
                     }
                 }
             }

@@ -182,4 +182,118 @@ mod tests {
         let back = proto_to_layout(proto).unwrap();
         assert_eq!(back, StorageLayout::RowMajor);
     }
+
+    fn setup_server() -> CacheServer {
+        let cache = Arc::new(TensorCache::new(1024).unwrap());
+        CacheServer::new(cache)
+    }
+
+    fn valid_proto_meta() -> proto::TensorMeta {
+        proto::TensorMeta {
+            dtype: proto::DType::F32 as i32,
+            shape: vec![2, 2],
+            layout: proto::StorageLayout::RowMajor as i32,
+        }
+    }
+
+    fn valid_tensor_bytes() -> Vec<u8> {
+        vec![0u8; 16] // 2x2 f32 = 4 * 4 bytes
+    }
+
+    #[tokio::test]
+    async fn grpc_put_then_get_success() {
+        let server = setup_server();
+
+        // PUT
+        let put_req = PutRequest {
+            key: "tensor1".to_string(),
+            meta: Some(valid_proto_meta()),
+            data: valid_tensor_bytes(),
+        };
+
+        let put_response = server.put(Request::new(put_req)).await;
+        assert!(put_response.is_ok());
+
+        // GET
+        let get_req = GetRequest {
+            key: "tensor1".to_string(),
+        };
+
+        let get_response = server.get(Request::new(get_req)).await;
+        assert!(get_response.is_ok());
+
+        let resp = get_response.unwrap().into_inner();
+        assert_eq!(resp.data.len(), 16);
+        assert!(resp.meta.is_some());
+    }
+
+    #[tokio::test]
+    async fn grpc_put_duplicate_key_fails() {
+        let server = setup_server();
+
+        let put_req = PutRequest {
+            key: "dup".to_string(),
+            meta: Some(valid_proto_meta()),
+            data: valid_tensor_bytes(),
+        };
+
+        server.put(Request::new(put_req.clone())).await.unwrap();
+
+        let second = server.put(Request::new(put_req)).await;
+
+        assert!(second.is_err());
+        assert_eq!(second.unwrap_err().code(), Code::AlreadyExists);
+    }
+
+    #[tokio::test]
+    async fn grpc_get_missing_returns_not_found() {
+        let server = setup_server();
+
+        let get_req = GetRequest {
+            key: "missing".to_string(),
+        };
+
+        let response = server.get(Request::new(get_req)).await;
+
+        assert!(response.is_err());
+        assert_eq!(response.unwrap_err().code(), Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn grpc_put_invalid_metadata_fails() {
+        let server = setup_server();
+
+        let bad_meta = proto::TensorMeta {
+            dtype: proto::DType::DtypeUnspecified as i32,
+            shape: vec![2, 2],
+            layout: proto::StorageLayout::RowMajor as i32,
+        };
+
+        let put_req = PutRequest {
+            key: "bad".to_string(),
+            meta: Some(bad_meta),
+            data: valid_tensor_bytes(),
+        };
+
+        let response = server.put(Request::new(put_req)).await;
+
+        assert!(response.is_err());
+        assert_eq!(response.unwrap_err().code(), Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn grpc_stats_endpoint_works() {
+        let server = setup_server();
+
+        let stats_req = StatsRequest {};
+
+        let response = server.get_stats(Request::new(stats_req)).await;
+
+        assert!(response.is_ok());
+
+        let stats = response.unwrap().into_inner();
+        assert_eq!(stats.entries, 0);
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+    }
 }

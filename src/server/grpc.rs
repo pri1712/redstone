@@ -134,9 +134,6 @@ impl RedStone for CacheServer {
 
 pub async fn start_server(addr: String, cache_size: u64) -> Result<(), Box<dyn std::error::Error>> {
     let addr = addr.parse()?;
-    if cache_size == 0 {
-
-    }
     let cache = Arc::new(TensorCache::new(cache_size)?);
     let server = CacheServer::new(cache);
 

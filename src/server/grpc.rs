@@ -124,11 +124,24 @@ impl RedStone for CacheServer {
 
     }
     async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
-       todo!()
-    }
+        let delete_request = request.into_inner();
+        let deleted = self.cache.delete(&delete_request.key).is_some();
+         Ok(Response::new(DeleteResponse { deleted }))
+        }
 
     async fn get_stats(&self, request: Request<StatsRequest>) -> Result<Response<StatsResponse>, Status> {
-        todo!()
+        let stats = self.cache.get_stats();
+
+        Ok(Response::new(StatsResponse {
+            entries: stats.entries as u64,
+            memory_used: stats.memory_used,
+            memory_limit: stats.memory_limit,
+            hits: stats.hits,
+            misses: stats.misses,
+            evictions: stats.evictions,
+            hit_rate: stats.hit_rate(),
+            memory_utilization: stats.memory_utilization(),
+        }))
     }
 }
 

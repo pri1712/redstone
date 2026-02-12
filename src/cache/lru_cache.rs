@@ -3,7 +3,7 @@ use std::fmt;
 use std::ptr::NonNull;
 use std::sync::{Arc, RwLock};
 
-use crate::cache::cache_stats::CacheStats;
+pub(crate) use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
 
 pub struct Cache {

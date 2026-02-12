@@ -6,6 +6,7 @@ pub mod client;
 use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
+use crate::cache::lru_cache::CacheStats;
 
 pub mod proto {
     tonic::include_proto!("redstone");
@@ -20,19 +21,6 @@ impl TensorCache {
         Ok(Self {
             cache: Cache::new(max_cache_size)?,
         })
-    }
-
-    /// Put method for f32 data type. It internally implements the core put method.
-    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
-        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
-            .map_err(|_| CacheError::InvalidTensorMetadata)?;
-
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const u8,
-                data.len() * size_of::<f32>()).to_vec()
-        };
-
-        self.put(key, meta, bytes)
     }
 
     /// Inserts a tensor into the cache.
@@ -53,6 +41,30 @@ impl TensorCache {
     pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
         self.cache.get(key)
     }
+
+    /// Deletes a key value pair and returns the deleted tensor.
+    pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
+        let deleted_tensor = self.cache.delete(key);
+        Some(deleted_tensor?)
+    }
+
+    pub fn get_stats(&self) -> CacheStats {
+        self.cache.stats()
+    }
+
+    /// Put method for f32 data type. It internally implements the core put method.
+    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
+        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
+            .map_err(|_| CacheError::InvalidTensorMetadata)?;
+
+        let bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const u8,
+                data.len() * size_of::<f32>()).to_vec()
+        };
+
+        self.put(key, meta, bytes)
+    }
+
 }
 
 #[cfg(test)]

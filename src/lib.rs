@@ -16,10 +16,10 @@ pub struct TensorCache {
 }
 
 impl TensorCache {
-    pub fn new(max_cache_size: u64) -> Self {
-        Self {
-            cache: Cache::new(max_cache_size).unwrap(),
-        }
+    pub fn new(max_cache_size: u64) -> Result<Self, CacheError> {
+        Ok(Self {
+            cache: Cache::new(max_cache_size)?,
+        })
     }
 
     /// Put method for f32 data type. It internally implements the core put method.

@@ -1,20 +1,25 @@
 use std::sync::Arc;
 mod tensor;
 mod cache;
-
+pub mod server;
+pub mod client;
 use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
+
+pub mod proto {
+    tonic::include_proto!("redstone");
+}
 
 pub struct TensorCache {
     cache: Cache,
 }
 
 impl TensorCache {
-    pub fn new(max_cache_size: u64) -> Self {
-        Self {
-            cache: Cache::new(max_cache_size).unwrap(),
-        }
+    pub fn new(max_cache_size: u64) -> Result<Self, CacheError> {
+        Ok(Self {
+            cache: Cache::new(max_cache_size)?,
+        })
     }
 
     /// Put method for f32 data type. It internally implements the core put method.

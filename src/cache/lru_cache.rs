@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::ptr::NonNull;
 use std::sync::{Arc, RwLock};
 
@@ -8,6 +9,12 @@ use crate::tensor::tensor::Tensor;
 pub struct Cache {
     inner: RwLock<CacheInner>,
 }
+
+/// its safe to implement this since all interactions with Cache inner happen under RwLock.
+/// Cache also derives the send and sync traits automatically since all its components have them.
+unsafe impl Send for CacheInner {}
+unsafe impl Sync for CacheInner {}
+
 
 /// Implementation of a cache for tensors. The key is a String and value is a complex tensor object.
 impl Cache {
@@ -266,6 +273,20 @@ pub enum CacheError {
     OutOfMemory,
     InvalidTensorMetadata,
 }
+
+impl fmt::Display for CacheError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CacheError::KeyAlreadyExists => write!(f, "Key already exists"),
+            CacheError::InvalidTensor => write!(f, "Invalid tensor"),
+            CacheError::InvalidSize => write!(f, "Invalid cache size"),
+            CacheError::OutOfMemory => write!(f, "Out of memory"),
+            CacheError::InvalidTensorMetadata => write!(f, "Invalid tensor metadata"),
+        }
+    }
+}
+
+impl std::error::Error for CacheError {}
 
 #[cfg(test)]
 mod tests {

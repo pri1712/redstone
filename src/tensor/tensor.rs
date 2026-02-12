@@ -22,6 +22,14 @@ impl Tensor {
     pub fn byte_size(&self) -> usize {
         self.metadata.total_byte_size().unwrap()
     }
+
+    pub fn get_metadata(&self) -> &TensorMeta {
+        &self.metadata
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 #[cfg(test)]

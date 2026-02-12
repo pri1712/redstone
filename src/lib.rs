@@ -6,6 +6,7 @@ pub mod client;
 use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
+use crate::cache::lru_cache::CacheStats;
 
 pub mod proto {
     tonic::include_proto!("redstone");
@@ -20,19 +21,6 @@ impl TensorCache {
         Ok(Self {
             cache: Cache::new(max_cache_size)?,
         })
-    }
-
-    /// Put method for f32 data type. It internally implements the core put method.
-    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
-        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
-            .map_err(|_| CacheError::InvalidTensorMetadata)?;
-
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const u8,
-                data.len() * size_of::<f32>()).to_vec()
-        };
-
-        self.put(key, meta, bytes)
     }
 
     /// Inserts a tensor into the cache.
@@ -53,12 +41,35 @@ impl TensorCache {
     pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
         self.cache.get(key)
     }
+
+    /// Deletes a key value pair and returns the deleted tensor.
+    pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
+        let deleted_tensor = self.cache.delete(key);
+        Some(deleted_tensor?)
+    }
+
+    pub fn get_stats(&self) -> CacheStats {
+        self.cache.stats()
+    }
+
+    /// Put method for f32 data type. It internally implements the core put method.
+    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
+        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
+            .map_err(|_| CacheError::InvalidTensorMetadata)?;
+
+        let bytes: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const u8,
+                data.len() * size_of::<f32>()).to_vec()
+        };
+
+        self.put(key, meta, bytes)
+    }
+
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 
     fn make_valid_meta() -> TensorMeta {
         TensorMeta::new(
@@ -71,7 +82,7 @@ mod tests {
 
     #[test]
     fn put_then_get_works() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta = make_valid_meta();
         let data = vec![0u8; 16];
@@ -84,10 +95,10 @@ mod tests {
 
     #[test]
     fn invalid_tensor_is_rejected() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta = make_valid_meta();
-        let data = vec![0u8; 15];
+        let data = vec![0u8; 15]; // invalid size
 
         let result = cache.put("bad".to_string(), meta, data);
         assert_eq!(result, Err(CacheError::InvalidTensor));
@@ -95,7 +106,7 @@ mod tests {
 
     #[test]
     fn duplicate_key_is_rejected() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
 
         let meta1 = make_valid_meta();
         let data1 = vec![0u8; 16];
@@ -110,7 +121,7 @@ mod tests {
 
     #[test]
     fn get_missing_returns_none() {
-        let cache = TensorCache::new(128);
+        let cache = TensorCache::new(128).unwrap();
         assert!(cache.get("missing").is_none());
     }
 }

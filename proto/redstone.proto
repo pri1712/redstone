@@ -42,8 +42,8 @@ message GetRequest {
 
 
 message GetResponse {
-  TensorMeta meta = 2;
-  bytes data = 3;
+  TensorMeta meta = 1;
+  bytes data = 2;
 }
 
 

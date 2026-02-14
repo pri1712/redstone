@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tonic::Code;
 use tonic::transport::Channel;
-use crate::cache::lru_cache::CacheError;
 use crate::proto;
 use crate::proto::{GetRequest,PutRequest,DeleteRequest,StatsRequest};
 use crate::proto::red_stone_client::RedStoneClient;
@@ -56,7 +55,7 @@ impl RemoteCacheClient {
             key: key.clone(),
             meta: Some(proto_meta),
             //deep copy has cpu overhead
-            data: data.clone(),
+            data,
         });
 
         match self.client.put(request).await {
@@ -82,7 +81,7 @@ impl RemoteCacheClient {
 
     pub async fn delete(&mut self, key: String) -> Result<(), String> {
         let request = tonic::Request::new(DeleteRequest {
-            key: key.clone(),
+            key,
         });
         match self.client.delete(request).await {
             Ok(_) => Ok(()),
@@ -129,36 +128,36 @@ pub struct CacheStats {
 /// utility functions for conversion
 fn dtype_to_proto(dtype: &DType) -> i32 {
     match dtype {
-        DType::F32 => DType::F32 as i32,
-        DType::F64 => DType::F64 as i32,
-        DType::I32 => DType::I32 as i32,
-        DType::I64 => DType::I64 as i32,
-        DType::U8 => DType::U8 as i32,
+        DType::F32 => proto::DType::F32 as i32,
+        DType::F64 => proto::DType::F64 as i32,
+        DType::I32 => proto::DType::I32 as i32,
+        DType::I64 => proto::DType::I64 as i32,
+        DType::U8 => proto::DType::U8 as i32,
     }
 }
 
 fn layout_to_proto(layout: &StorageLayout) -> i32 {
     match layout {
-        StorageLayout::RowMajor => StorageLayout::RowMajor as i32,
-        StorageLayout::ColumnMajor => StorageLayout::ColumnMajor as i32,
+        StorageLayout::RowMajor => proto::StorageLayout::RowMajor as i32,
+        StorageLayout::ColumnMajor => proto::StorageLayout::ColumnMajor as i32,
     }
 }
 
 fn proto_to_dtype(dtype: i32) -> Result<DType, String> {
-    match DType::try_from(dtype) {
-        Ok(DType::F32) => Ok(DType::F32),
-        Ok(DType::F64) => Ok(DType::F64),
-        Ok(DType::I32) => Ok(DType::I32),
-        Ok(DType::I64) => Ok(DType::I64),
-        Ok(DType::U8) => Ok(DType::U8),
+    match proto::DType::try_from(dtype) {
+        Ok(proto::DType::F32) => Ok(DType::F32),
+        Ok(proto::DType::F64) => Ok(DType::F64),
+        Ok(proto::DType::I32) => Ok(DType::I32),
+        Ok(proto::DType::I64) => Ok(DType::I64),
+        Ok(proto::DType::U8) => Ok(DType::U8),
         _ => Err("Invalid dtype".to_string()),
     }
 }
 
 fn proto_to_layout(layout: i32) -> Result<StorageLayout, String> {
-    match StorageLayout::try_from(layout) {
-        Ok(StorageLayout::RowMajor) => Ok(StorageLayout::RowMajor),
-        Ok(StorageLayout::ColumnMajor) => Ok(StorageLayout::ColumnMajor),
+    match proto::StorageLayout::try_from(layout) {
+        Ok(proto::StorageLayout::RowMajor) => Ok(StorageLayout::RowMajor),
+        Ok(proto::StorageLayout::ColumnMajor) => Ok(StorageLayout::ColumnMajor),
         _ => Err("Invalid layout".to_string()),
     }
 }

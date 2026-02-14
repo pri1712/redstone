@@ -1,6 +1,6 @@
 // Binary to run the Redstone cache server
 
-use redstone::server::grpc::start_server;
+use redstone::transport::grpc::server::start_server;
 use std::env;
 
 const DEFAULT_CACHE_SIZE : u64= 1024 * 1024 * 1024;

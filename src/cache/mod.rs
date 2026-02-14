@@ -1,2 +1,2 @@
 pub mod lru_cache;
-mod cache_stats;
+pub mod cache_stats;

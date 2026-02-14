@@ -24,7 +24,7 @@ impl RemoteCacheClient {
 
     pub async fn get(&mut self, key: String) -> Result<Option<Arc<Tensor>>, String> {
         let request = tonic::Request::new(GetRequest {
-            key: key.to_string(),
+            key,
         });
 
         match self.client.get(request).await {

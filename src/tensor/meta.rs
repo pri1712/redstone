@@ -1,9 +1,9 @@
 //declaration for tensor metadata
 
 pub struct TensorMeta {
-    pub(crate) dtype: DType, //data type stored in the tensor
-    pub(crate) shape: Vec<usize>, //shape of tensor (dimensions)
-    pub(crate) layout: StorageLayout //row major or column major in memory for faster access.
+    dtype: DType, //data type stored in the tensor
+    shape: Vec<usize>, //shape of tensor (dimensions)
+    layout: StorageLayout //row major or column major in memory for faster access.
 }
 
 impl TensorMeta {

@@ -10,6 +10,9 @@ tokio = { version = "1", features = ["full"] }
 bytes = "1.11.1"
 tonic-prost = "0.14.0"
 
+[dev-dependencies]
+rand = "0.10.0"
+
 [build-dependencies]
 tonic-prost-build = "0.14"
 

@@ -113,7 +113,6 @@ async fn duplicate_put_fails() {
 
 #[tokio::test]
 async fn test_oom_put() {
-    use tokio::time::{sleep, Duration};
     let addr = server_setup().await;
     //allows server to initialize
     sleep(Duration::from_millis(200)).await;

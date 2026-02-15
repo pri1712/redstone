@@ -75,7 +75,7 @@ async fn stress_test_concurrent_clients() {
     println!("Hits: {}", stats.hits);
     println!("Misses: {}", stats.misses);
     println!("Evictions: {}", stats.evictions);
-
+    assert!(stats.hits+stats.misses>0);
     assert!(stats.memory_used <= stats.memory_limit);
 }
 async fn server_setup() -> String {

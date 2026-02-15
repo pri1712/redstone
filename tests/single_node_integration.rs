@@ -5,6 +5,8 @@ use redstone::tensor::meta::{TensorMeta,DType,StorageLayout};
 use std::time::Duration;
 use tokio::time::sleep;
 use rand::{rng, RngExt};
+
+use std::sync::Arc;
 fn random_port() -> u16 {
     rng().random_range(50060..60000)
 }
@@ -12,7 +14,7 @@ fn random_port() -> u16 {
 #[tokio::test]
 async fn single_node_put_get_delete_flow() {
 
-    let addr = test_server_setup().await;
+    let addr = server_setup().await;
 
     sleep(Duration::from_millis(200)).await;
 
@@ -77,7 +79,7 @@ async fn single_node_put_get_delete_flow() {
 #[tokio::test]
 async fn duplicate_put_fails() {
 
-    let addr = test_server_setup().await;
+    let addr = server_setup().await;
     sleep(Duration::from_millis(200)).await;
 
     let mut client = RemoteCacheClient::connect(addr)
@@ -112,7 +114,7 @@ async fn duplicate_put_fails() {
 #[tokio::test]
 async fn test_oom_put() {
     use tokio::time::{sleep, Duration};
-    let addr = test_server_setup().await;
+    let addr = server_setup().await;
     //allows server to initialize
     sleep(Duration::from_millis(200)).await;
 
@@ -148,7 +150,87 @@ async fn test_oom_put() {
     );
 }
 
-async fn test_server_setup() -> String {
+#[tokio::test]
+async fn test_invalid_tensor_data() {
+
+    let addr = server_setup().await;
+    sleep(Duration::from_millis(200)).await;
+
+    let mut client = RemoteCacheClient::connect(addr)
+        .await
+        .expect("Client failed");
+
+    //16 bytes specified in tensor metadata.
+    let meta = TensorMeta::new(
+        DType::F32,
+        vec![2, 2],
+        StorageLayout::RowMajor,
+    )
+        .unwrap();
+    //sending only 15 bytes.
+    let invalid_bytes = vec![0u8; 15];
+
+    let result = client
+        .put("invalid_tensor".to_string(), meta, invalid_bytes)
+        .await;
+
+    assert!(result.is_err(),"Expected invalid tensor errors but put succeeded");
+}
+
+
+#[tokio::test]
+async fn test_concurrent_clients_race_conditions() {
+    //testing concurrent access to a key.
+    let addr = server_setup().await;
+    sleep(Duration::from_millis(200)).await;
+
+    let addr_arc = Arc::new(addr);
+
+    let writer = {
+        let addr = addr_arc.clone();
+        tokio::spawn(async move {
+            let mut client = RemoteCacheClient::connect((*addr).clone())
+                .await
+                .expect("Writer failed");
+
+            let bytes = vec![0u8; 40];
+
+            for _ in 0..100 {
+                let meta_one = TensorMeta::new(
+                    DType::F32,
+                    vec![10],
+                    StorageLayout::RowMajor,
+                ).unwrap();
+                let _ = client.put("race_key".to_string(), meta_one, bytes.clone()).await;
+            }
+        })
+    };
+
+    let reader = {
+        let addr = addr_arc.clone();
+        tokio::spawn(async move {
+            let mut client = RemoteCacheClient::connect((*addr).clone())
+                .await
+                .expect("Reader failed");
+
+            for i in 0..100 {
+                let result = client.get("race_key".to_string()).await;
+                println!("Iteration {} → {:?}", i, result.is_ok());
+            }
+        })
+    };
+
+    writer.await.unwrap();
+    reader.await.unwrap();
+
+    let mut client = RemoteCacheClient::connect((*addr_arc).clone())
+        .await
+        .expect("Final client failed");
+
+    let _ = client.get("race_key".to_string()).await.unwrap();
+}
+
+async fn server_setup() -> String {
     let port = random_port();
     let addr = format!("127.0.0.1:{}", port);
     let server_addr = addr.clone();

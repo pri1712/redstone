@@ -1,6 +1,6 @@
 use std::sync::Arc;
-mod tensor;
-mod cache;
+pub mod tensor;
+pub mod cache;
 pub mod transport;
 
 use crate::cache::lru_cache::{Cache, CacheError};

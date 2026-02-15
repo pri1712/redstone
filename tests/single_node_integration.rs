@@ -4,7 +4,7 @@ use redstone::tensor::meta::{TensorMeta,DType,StorageLayout};
 
 use std::time::Duration;
 use tokio::time::sleep;
-use rand::{rng, Rng, RngExt};
+use rand::{rng, RngExt};
 fn random_port() -> u16 {
     rng().random_range(50060..60000)
 }

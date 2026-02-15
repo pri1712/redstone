@@ -11,16 +11,8 @@ fn random_port() -> u16 {
 
 #[tokio::test]
 async fn single_node_put_get_delete_flow() {
-    let port = random_port();
-    let addr = format!("127.0.0.1:{}", port);
 
-    //clone it so we can take ownership inside the below scope.
-    let server_addr = addr.clone();
-    tokio::spawn(async move {
-        start_server(server_addr, 1024 * 1024)
-            .await
-            .expect("Server failed");
-    });
+    let addr = test_server_setup().await;
 
     sleep(Duration::from_millis(200)).await;
 
@@ -28,7 +20,7 @@ async fn single_node_put_get_delete_flow() {
         .await
         .expect("Client failed to connect");
 
-    /// Testing put RPC
+    // Testing put RPC
 
     let meta = TensorMeta::new(
         DType::F32,
@@ -42,7 +34,7 @@ async fn single_node_put_get_delete_flow() {
     let bytes: Vec<u8> = unsafe {
         std::slice::from_raw_parts(
             data.as_ptr() as *const u8,
-            data.len() * std::mem::size_of::<f32>(),
+            data.len() * size_of::<f32>(),
         )
             .to_vec()
     };
@@ -52,7 +44,7 @@ async fn single_node_put_get_delete_flow() {
         .await
         .expect("Put failed");
 
-    /// Testing get RPC
+    // Testing get RPC
 
     let result = client
         .get("tensor1".to_string())
@@ -66,7 +58,7 @@ async fn single_node_put_get_delete_flow() {
     assert_eq!(tensor.get_metadata().shape(), &vec![2, 2]);
     assert_eq!(tensor.get_data().len(), 16);
 
-/// Testing delete RPC
+// Testing delete RPC
 
     client
         .delete("tensor1".to_string())
@@ -81,18 +73,11 @@ async fn single_node_put_get_delete_flow() {
     assert!(after_delete.is_none());
 }
 
-    /// Testing duplicate puts
+    // Testing duplicate puts
 #[tokio::test]
 async fn duplicate_put_fails() {
-    let port = random_port();
-    let addr = format!("127.0.0.1:{}", port);
-    let server_addr = addr.clone();
-    tokio::spawn(async move {
-        start_server(server_addr, 1024 * 1024)
-            .await
-            .expect("Server failed");
-    });
 
+    let addr = test_server_setup().await;
     sleep(Duration::from_millis(200)).await;
 
     let mut client = RemoteCacheClient::connect(addr)
@@ -122,4 +107,55 @@ async fn duplicate_put_fails() {
         .await;
 
     assert!(second.is_err());
+}
+
+#[tokio::test]
+async fn test_oom_put() {
+    use tokio::time::{sleep, Duration};
+    let addr = test_server_setup().await;
+    //allows server to initialize
+    sleep(Duration::from_millis(200)).await;
+
+    let mut client = RemoteCacheClient::connect(addr)
+        .await
+        .expect("Client failed to connect");
+
+    let element_count = 300_000;
+
+    let meta = TensorMeta::new(
+        DType::F32,
+        vec![element_count],
+        StorageLayout::RowMajor,
+    )
+        .expect("Meta creation failed");
+
+    let data = vec![0f32; element_count];
+
+    let bytes: Vec<u8> = unsafe {
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const u8,
+            data.len() * size_of::<f32>(),
+        )
+            .to_vec()
+    };
+
+    let result = client
+        .put("huge_tensor".to_string(), meta, bytes)
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected OOM error but put succeeded"
+    );
+}
+
+async fn test_server_setup() -> String {
+    let port = random_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let server_addr = addr.clone();
+    tokio::spawn(async move {
+        start_server(server_addr, 1024 * 1024)
+            .await
+            .expect("Server failed");
+    });
+    addr
 }

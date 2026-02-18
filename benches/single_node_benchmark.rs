@@ -1,8 +1,13 @@
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{
+    criterion_group, criterion_main, BenchmarkId, Criterion,
+    Throughput, BatchSize, PlotConfiguration, AxisScale
+};
 use redstone::TensorCache;
 use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
+use std::sync::Arc;
+use std::thread;
 
-fn make_tensor_bytes(elements: usize) -> (TensorMeta, Vec<u8>) {
+fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     let meta = TensorMeta::new(
         DType::F32,
         vec![elements],
@@ -13,25 +18,40 @@ fn make_tensor_bytes(elements: usize) -> (TensorMeta, Vec<u8>) {
     (meta, bytes)
 }
 
-fn bench_put(c: &mut Criterion) {
-    let mut group = c.benchmark_group("put");
+fn populate_cache(cache: &TensorCache, count: usize, size_per_entry: usize) {
+    for i in 0..count {
+        let (meta, bytes) = make_tensor(size_per_entry);
+        cache.put(format!("preload_{}", i), meta, bytes).ok();
+    }
+}
 
-    for size in [16usize, 128, 1024, 8192] {
-        //dynamic number of elements in each tensor. so we have a benchmark for different sizes.
-        group.throughput(Throughput::Bytes(
-            (size * size_of::<f32>()) as u64,
-        ));
+fn bench_put_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("01_put_by_size");
+
+    let sizes = vec![
+        ("tiny_3KB", 768),
+        ("small_50KB", 12_800),
+        ("medium_1MB", 262_144),
+        ("large_10MB", 2_621_440),
+    ];
+
+    for (name, elements) in sizes {
+        let size_bytes = elements * size_of::<f32>();
+        group.throughput(Throughput::Bytes(size_bytes as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &size,
-            |b, &size| {
-                b.iter(|| {
-                    let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
-                    let (meta, bytes) = make_tensor_bytes(size);
-                    let key = format!("key_{}", size);
-                    let _ = cache.put(key, meta, bytes);
-                });
+            BenchmarkId::new("put", name),
+            &elements,
+            |b, &elements| {
+                let cache = TensorCache::new(100 * 1024 * 1024).unwrap();
+
+                b.iter_batched(
+                    || make_tensor(elements),
+                    |(meta, bytes)| {
+                        cache.put(format!("key_{}", rand::random::<u32>()), meta, bytes).ok();
+                    },
+                    BatchSize::SmallInput,
+                );
             },
         );
     }
@@ -40,21 +60,64 @@ fn bench_put(c: &mut Criterion) {
 }
 
 fn bench_get_hit(c: &mut Criterion) {
-    let mut group = c.benchmark_group("get_hit");
+    let mut group = c.benchmark_group("02_get_hit");
 
-    for size in [16usize, 128, 1024, 8192] {
+    for (name, elements) in &[("tiny", 768), ("medium", 262_144)] {
         group.throughput(Throughput::Elements(1));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &size,
-            |b, &size| {
-                let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
-                let (meta, bytes) = make_tensor_bytes(size);
-                cache.put("hit_key".to_string(), meta, bytes).unwrap();
+            BenchmarkId::new("get_hit", name),
+            elements,
+            |b, &elements| {
+                let cache = TensorCache::new(100 * 1024 * 1024).unwrap();
+                let (meta, bytes) = make_tensor(elements);
+                cache.put("test_key".to_string(), meta, bytes).unwrap();
+
+                b.iter(|| cache.get("test_key"));
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_eviction(c: &mut Criterion) {
+    let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
+
+    c.bench_function("03_eviction_triggered", |b| {
+        b.iter(|| {
+            for i in 0..15 {
+                let (meta, bytes) = make_tensor(262_144);
+                cache.put(format!("evict_{}", i), meta, bytes).ok();
+            }
+        });
+    });
+}
+
+fn bench_concurrent_reads(c: &mut Criterion) {
+    let mut group = c.benchmark_group("05_concurrent_reads");
+
+    for num_threads in &[1, 2, 4, 8] {
+        group.throughput(Throughput::Elements(*num_threads as u64 * 1000));
+
+        group.bench_with_input(
+            BenchmarkId::new("threads", num_threads),
+            num_threads,
+            |b, &num_threads| {
+                let cache = Arc::new(TensorCache::new(10 * 1024 * 1024).unwrap());
+                populate_cache(&cache, 100, 128);
 
                 b.iter(|| {
-                    let _ = cache.get("hit_key");
+                    let handles: Vec<_> = (0..num_threads).map(|_| {
+                        let cache_clone = Arc::clone(&cache);
+                        thread::spawn(move || {
+                            for i in 0..1000 {
+                                cache_clone.get(&format!("preload_{}", i % 100));
+                            }
+                        })
+                    }).collect();
+
+                    handles.into_iter().for_each(|h| h.join().unwrap());
                 });
             },
         );
@@ -63,45 +126,30 @@ fn bench_get_hit(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_get_miss(c: &mut Criterion) {
-    let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
+fn bench_throughput(c: &mut Criterion) {
+    let mut group = c.benchmark_group("08_throughput");
+    group.measurement_time(std::time::Duration::from_secs(10));
 
-    c.bench_function("get_miss", |b| {
+    group.bench_function("max_read_ops", |b| {
+        let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
+        populate_cache(&cache, 1000, 128);
+
+        let mut counter = 0;
         b.iter(|| {
-            let _ = cache.get("missing_key");
+            cache.get(&format!("preload_{}", counter % 1000));
+            counter += 1;
         });
     });
-}
 
-fn bench_mixed_workload(c: &mut Criterion) {
-    let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
-
-    c.bench_function("mixed_put_get_delete", |b| {
-        b.iter(|| {
-            for i in 0..50 {
-                let key = format!("mixed_{}", i);
-
-                let meta = TensorMeta::new(
-                    DType::F32,
-                    vec![32],
-                    StorageLayout::RowMajor,
-                ).unwrap();
-
-                let bytes = vec![0u8; 32 * 4];
-
-                let _ = cache.put(key.clone(), meta, bytes);
-                let _ = cache.get(&key);
-                let _ = cache.delete(&key);
-            }
-        });
-    });
+    group.finish();
 }
 
 criterion_group!(
     benches,
-    bench_put,
+    bench_put_sizes,
     bench_get_hit,
-    bench_get_miss,
-    bench_mixed_workload
+    bench_eviction,
+    bench_concurrent_reads,
+    bench_throughput,
 );
 criterion_main!(benches);

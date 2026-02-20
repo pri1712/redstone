@@ -408,7 +408,7 @@ async fn load_model_weights(cache: &mut RemoteCacheClient) -> Model {
 | **3KB** (tiny - BERT embedding)  | 0.4 μs | ~2.5M ops/sec |
 | **50KB** (small - layer weights) | 0.9 μs | ~1.1M ops/sec |
 | **1MB** (medium - weight matrix) | 6.2 μs | ~161K ops/sec |
-| **10MB** (large - full layer)    | 20.8 μs | ~48K ops/sec |]
+| **10MB** (large - full layer)    | 20.8 μs | ~48K ops/sec |
 
 ### Get (read) latency:
 

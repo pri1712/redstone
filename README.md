@@ -515,7 +515,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 **A**: No. Writes are immutable. To update, delete the old key and put a new value. This simplifies consistency in distributed mode.
 
 ### Q: What's the maximum tensor size?
-**A**: Limited only by available memory and network transfer time. Tested with 1GB+ tensors. For very large tensors (>10GB), consider chunking.
+**A**: Limited only by available memory and network transfer time. For very large tensors (>10GB), consider chunking.
 
 ### Q: Does it persist to disk?
 **A**: No, currently in-memory only for maximum performance. Persistence is a potential future feature.

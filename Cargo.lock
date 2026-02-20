@@ -961,6 +961,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "criterion",
+ "fastrand",
  "parking_lot",
  "prost",
  "rand",

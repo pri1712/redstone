@@ -3,10 +3,10 @@ use std::fmt;
 use std::ptr::NonNull;
 use std::sync::{Arc};
 use parking_lot::RwLock;
-
 pub(crate) use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
 
+static APPROX_LRU: f32 = 0.9;
 pub struct Cache {
     inner: RwLock<CacheInner>,
 }
@@ -42,7 +42,6 @@ impl Cache {
     /// Insert a kv pair into the cache, it fails if the key already exists.
     /// This is to preserve the guarantee of write once read many times, simplifying operations.
     pub fn put(&self, key: String, tensor: Tensor) -> Result<(), CacheError> {
-        //acquiring write lock since get mutates internal LRU state.
         let mut inner = self.inner.write();
         inner.put(key, tensor)
     }

@@ -1,6 +1,6 @@
 # Redstone
 
-> **ACTIVE DEVELOPMENT**: Redstone is currently a **single-node cache** with network layer. Distributed features (sharding, replication, fault tolerance) are actively being developed. See [Roadmap](#roadmap) below.
+> **ACTIVE DEVELOPMENT**: Redstone is currently a **single-node cache** with network layer. Distributed features (sharding, replication, fault tolerance) are actively being developed.
 
 A high-performance, distributed tensor cache built in Rust, optimized for ML inference and training workloads.
 
@@ -335,8 +335,6 @@ async fn get_user_embedding(user_id: &str, cache: &mut RemoteCacheClient) -> Emb
     embedding
 }
 
-// First call: 100ms (cache miss + BERT)
-// Subsequent calls: 1ms (cache hit)
 ```
 
 ### 2. Training - Preprocessed Data Cache
@@ -393,24 +391,50 @@ async fn load_model_weights(cache: &mut RemoteCacheClient) -> Model {
 
 ## Performance
 
-> **Note**: Benchmarks are for single-node setup. Distributed performance will vary.
+> **Note**: Benchmarks are for single-node setup, are reported without any network overhead (pure operative costs) and are performed on commercial hardware
 
-**Single Node (Current):**
-- **Read throughput**: ~1M ops/sec (cached)
-- **Write throughput**: ~100K ops/sec
-- **Read latency**: <100μs p99 (local)
-- **Memory overhead**: ~72 bytes per cached tensor
+### Test environment:
+- CPU: Apple M4 Chip (10 core)
+- RAM: 16GB
+- OS: OSX
+- Rust version: 1.92.0
 
-**Network (gRPC):**
-- **Remote read latency**: <1ms p50, <5ms p99 (local network)
-- **Remote write latency**: <2ms p50, <10ms p99
-- **Large tensor (100MB)**: ~100ms transfer time (1Gbps network)
+### Core operations:
 
-**Planned (Distributed with 3 nodes):**
-- **Total capacity**: 3x single node (e.g., 30GB with 10GB/node)
-- **Read throughput**: 3x single node (parallel reads from replicas)
-- **Fault tolerance**: Survive 1-2 node failures
-- **Availability**: 99.9%+ (with replication)
+#### Put (write) latency:
+
+|  Tensor Size                     | Average Latency | Throughput |
+|----------------------------------|-----------------|------------|
+| **3KB** (tiny - BERT embedding)  | 0.4 μs | ~2.5M ops/sec |
+| **50KB** (small - layer weights) | 0.9 μs | ~1.1M ops/sec |
+| **1MB** (medium - weight matrix) | 6.2 μs | ~161K ops/sec |
+| **10MB** (large - full layer)    | 20.8 μs | ~48K ops/sec |]
+
+### Get (read) latency:
+
+| Tensor Size | p50 Latency | p99 Latency | Notes |
+|-------------|-------------|-------------|-------|
+| **3KB** (tiny) | 12.1 ns | 14.8 ns | BERT embedding lookup |
+| **1MB** (medium) | 12.4 ns | 16.2 ns | Arc::clone overhead only |
+
+**Throughput:** ~56.8M reads/sec (single-threaded, cached data)
+
+The above data **ignores** all network overhead, serialization and deserialization overhead.
+
+### Maximum Throughput
+
+#### Single-Threaded Read Throughput
+
+**Max sustained read ops:** 17.6 ns/op = **~56.8M operations/sec**
+
+| Metric | Value |
+|--------|-------|
+| Mean | 17.609 ns |
+| Median | 17.635 ns |
+| Std Dev | 507 ps |
+| R² | 0.932 |
+
+
 
 Run benchmarks yourself:
 
@@ -420,18 +444,6 @@ cargo bench
 
 ## Configuration
 
-### Environment Variables
-
-```bash
-# Server address
-REDSTONE_ADDR=0.0.0.0:50051
-
-# Cache size in bytes
-REDSTONE_CACHE_SIZE=1073741824  # 1GB
-
-# Log level
-RUST_LOG=info  # debug, info, warn, error
-```
 
 ### Command-Line Arguments
 
@@ -445,34 +457,12 @@ cargo run --bin server -- 0.0.0.0:50051 10737418240
 
 ## Development
 
-### Project Structure
-
-```
-redstone/
-├── Cargo.toml
-├── build.rs                 # Proto compilation
-├── proto/
-│   └── redstone.proto       # gRPC protocol definition
-├── src/
-│   ├── lib.rs               # Public API
-│   ├── cache.rs             # LRU cache implementation
-│   ├── tensor/
-│   │   ├── meta.rs          # TensorMeta (dtype, shape, layout)
-│   │   └── tensor.rs        # Tensor (data container)
-│   ├── server.rs            # gRPC server
-│   ├── client.rs            # gRPC client library
-│   └── bin/
-│       ├── server.rs        # Server binary
-│       └── client.rs        # Example client binary
-└── tests/
-    └── integration_test.rs  # Integration tests
-```
 
 ### Building from Source
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/redstone.git
+git clone https://github.com/pri1712/redstone.git
 cd redstone
 
 # Build
@@ -513,41 +503,13 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 - Documentation improvements
 
 
-## Comparison to Alternatives
-
-| Feature | Redstone | Redis | Memcached |
-|---------|----------|-------|-----------|
-| **Data model** | Tensors (ML-optimized) | Generic key-value | Binary blobs |
-| **Eviction** | Memory-based LRU | Count-based (default) | Memory-based LRU |
-| **Distribution** | Consistent hashing (planned) | Cluster mode | Client-side |
-| **Replication** | Planned (3x default) | Master-replica | None |
-| **Use case** | ML inference/training | General caching | Simple caching |
-| **Language** | Rust | C | C |
-
-**When to use Redstone:**
-- Caching large tensors (embeddings, model weights)
-- ML-specific workloads
-- Need memory-based eviction
-- Want type-safe tensor operations
-
-**When to use Redis:**
-- General-purpose caching
-- Need pub/sub, Lua scripting
-- Mature ecosystem required
-- Small values (<1MB)
-
-**When to use Memcached:**
-- Simple key-value cache
-- Extremely high performance
-- No need for persistence or replication
-
 ## FAQ
 
 ### Q: Is this production-ready?
-**A**: Not yet. Currently single-node only. Distributed features (sharding, replication) are in active development. Target: production-ready in 8-12 weeks.
+**A**: Not yet. Currently single-node only. Distributed features (sharding, replication) are in active development. 
 
 ### Q: What happens when the cache is full?
-**A**: LRU eviction automatically removes the least recently used tensors to make space. If a single tensor is larger than the entire cache, `RESOURCE_EXHAUSTED` error is returned.
+**A**: LRU eviction automatically removes the least recently used tensors to make space. If a single tensor is larger than the entire cache, it will cause all other tensors to evict and then will fail the put operation.
 
 ### Q: Can I update a cached tensor?
 **A**: No. Writes are immutable. To update, delete the old key and put a new value. This simplifies consistency in distributed mode.
@@ -559,20 +521,13 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 **A**: No, currently in-memory only for maximum performance. Persistence is a potential future feature.
 
 ### Q: Can I use this with TensorFlow/PyTorch/JAX?
-**A**: Yes! Convert your framework's tensors to bytes, then use the cache. Python client is planned for easier integration.
+**A**: Yes! Convert your framework's tensors to bytes, then use the cache. **Python client is planned for easier integration.**
 
-### Q: How does it compare to Redis for ML workloads?
-**A**: Redstone is optimized for tensors (memory-based eviction, type-aware), while Redis is general-purpose. For large tensors (>1MB), Redstone is more efficient.
 
 ## License
 
 Apache License 2.0 - see [LICENSE](LICENSE) for details.
 
-## Acknowledgments
-
-- Built with [tonic](https://github.com/hyperium/tonic) (gRPC)
-- Inspired by [Memcached](https://memcached.org/), [Redis](https://redis.io/), and [Ray](https://www.ray.io/)
-- Designed for the ML inference use case
 
 ## Contact
 

@@ -1,11 +1,13 @@
 use criterion::{
     criterion_group, criterion_main, BenchmarkId, Criterion,
-    Throughput, BatchSize, PlotConfiguration, AxisScale
+    Throughput, BatchSize, black_box
 };
 use redstone::TensorCache;
 use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
+use std::mem::size_of;
 
 fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     let meta = TensorMeta::new(
@@ -21,7 +23,7 @@ fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
 fn populate_cache(cache: &TensorCache, count: usize, size_per_entry: usize) {
     for i in 0..count {
         let (meta, bytes) = make_tensor(size_per_entry);
-        cache.put(format!("preload_{}", i), meta, bytes).ok();
+        cache.put(format!("preload_{}", i), meta, bytes).unwrap();
     }
 }
 
@@ -43,12 +45,15 @@ fn bench_put_sizes(c: &mut Criterion) {
             BenchmarkId::new("put", name),
             &elements,
             |b, &elements| {
-                let cache = TensorCache::new(100 * 1024 * 1024).unwrap();
 
                 b.iter_batched(
-                    || make_tensor(elements),
-                    |(meta, bytes)| {
-                        cache.put(format!("key_{}", rand::random::<u32>()), meta, bytes).ok();
+                    || {
+                        let cache = TensorCache::new(1024 * 1024 * 1024).unwrap();
+                        let (meta, bytes) = make_tensor(elements);
+                        (cache, meta, bytes)
+                    },
+                    |(cache, meta, bytes)| {
+                        cache.put("key".to_string(), meta, bytes).unwrap();
                     },
                     BatchSize::SmallInput,
                 );
@@ -69,55 +74,11 @@ fn bench_get_hit(c: &mut Criterion) {
             BenchmarkId::new("get_hit", name),
             elements,
             |b, &elements| {
-                let cache = TensorCache::new(100 * 1024 * 1024).unwrap();
+                let cache = TensorCache::new(1024 * 1024 * 1024).unwrap();
                 let (meta, bytes) = make_tensor(elements);
                 cache.put("test_key".to_string(), meta, bytes).unwrap();
-
-                b.iter(|| cache.get("test_key"));
-            },
-        );
-    }
-
-    group.finish();
-}
-
-fn bench_eviction(c: &mut Criterion) {
-    let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
-
-    c.bench_function("03_eviction_triggered", |b| {
-        b.iter(|| {
-            for i in 0..15 {
-                let (meta, bytes) = make_tensor(262_144);
-                cache.put(format!("evict_{}", i), meta, bytes).ok();
-            }
-        });
-    });
-}
-
-fn bench_concurrent_reads(c: &mut Criterion) {
-    let mut group = c.benchmark_group("05_concurrent_reads");
-
-    for num_threads in &[1, 2, 4, 8] {
-        group.throughput(Throughput::Elements(*num_threads as u64 * 1000));
-
-        group.bench_with_input(
-            BenchmarkId::new("threads", num_threads),
-            num_threads,
-            |b, &num_threads| {
-                let cache = Arc::new(TensorCache::new(10 * 1024 * 1024).unwrap());
-                populate_cache(&cache, 100, 128);
-
                 b.iter(|| {
-                    let handles: Vec<_> = (0..num_threads).map(|_| {
-                        let cache_clone = Arc::clone(&cache);
-                        thread::spawn(move || {
-                            for i in 0..1000 {
-                                cache_clone.get(&format!("preload_{}", i % 100));
-                            }
-                        })
-                    }).collect();
-
-                    handles.into_iter().for_each(|h| h.join().unwrap());
+                    black_box(cache.get("test_key"));
                 });
             },
         );
@@ -126,17 +87,93 @@ fn bench_concurrent_reads(c: &mut Criterion) {
     group.finish();
 }
 
+
+fn bench_eviction(c: &mut Criterion) {
+
+    c.bench_function("03_eviction_triggered", |b| {
+
+        b.iter_batched(
+            || {
+                let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
+                populate_cache(&cache, 15, 100_000);
+                cache
+            },
+            |cache| {
+                let (meta, bytes) = make_tensor(500_000);
+                cache.put("evict_key".to_string(), meta, bytes).unwrap();
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_concurrent_reads(c: &mut Criterion) {
+    let mut group = c.benchmark_group("05_concurrent_reads");
+
+    const OPS_PER_THREAD: usize = 1000;
+
+    for &num_threads in &[1, 2, 4, 8] {
+
+        let total_ops = num_threads * OPS_PER_THREAD;
+        group.throughput(Throughput::Elements(total_ops as u64));
+
+        group.bench_with_input(
+            BenchmarkId::new("threads", num_threads),
+            &num_threads,
+            |b, &num_threads| {
+
+                let cache = Arc::new(
+                    TensorCache::new(10 * 1024 * 1024).unwrap()
+                );
+                populate_cache(&cache, 100, 128);
+
+                let keys: Vec<String> = (0..100)
+                    .map(|i| format!("preload_{}", i))
+                    .collect();
+
+                b.iter(|| {
+                    let handles: Vec<_> = (0..num_threads)
+                        .map(|_| {
+                            let cache_clone = Arc::clone(&cache);
+                            let keys = keys.clone();
+
+                            thread::spawn(move || {
+                                for i in 0..OPS_PER_THREAD {
+                                    let key = &keys[i % 100];
+                                    black_box(cache_clone.get(key));
+                                }
+                            })
+                        })
+                        .collect();
+
+                    for h in handles {
+                        h.join().unwrap();
+                    }
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 fn bench_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("08_throughput");
-    group.measurement_time(std::time::Duration::from_secs(10));
+    group.measurement_time(Duration::from_secs(10));
 
     group.bench_function("max_read_ops", |b| {
-        let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
+
+        let cache = TensorCache::new(1024 * 1024 * 1024).unwrap();
         populate_cache(&cache, 1000, 128);
 
+        let keys: Vec<String> = (0..1000)
+            .map(|i| format!("preload_{}", i))
+            .collect();
+
         let mut counter = 0;
+
         b.iter(|| {
-            cache.get(&format!("preload_{}", counter % 1000));
+            let key = &keys[counter % 1000];
+            black_box(cache.get(key));
             counter += 1;
         });
     });
@@ -152,4 +189,5 @@ criterion_group!(
     bench_concurrent_reads,
     bench_throughput,
 );
+
 criterion_main!(benches);

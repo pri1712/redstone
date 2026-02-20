@@ -95,7 +95,7 @@ fn bench_eviction(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let cache = TensorCache::new(10 * 1024 * 1024).unwrap();
-                populate_cache(&cache, 15, 100_000);
+                populate_cache(&cache, 60, 100_000);
                 cache
             },
             |cache| {

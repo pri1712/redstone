@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr::NonNull;
-use std::sync::{Arc, RwLock};
-
+use std::sync::{Arc};
+use parking_lot::RwLock;
 pub(crate) use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
 
+static APPROX_LRU: f32 = 0.9;
 pub struct Cache {
     inner: RwLock<CacheInner>,
 }
@@ -41,39 +42,39 @@ impl Cache {
     /// Insert a kv pair into the cache, it fails if the key already exists.
     /// This is to preserve the guarantee of write once read many times, simplifying operations.
     pub fn put(&self, key: String, tensor: Tensor) -> Result<(), CacheError> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         inner.put(key, tensor)
     }
 
     /// Get the value for a given key, it returns None in case no entry exists in the cache for the
     /// given key. Returns the corresponding tensor in the other case.
     pub fn get(&self, key: &str) -> Option<Arc<Tensor>> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         inner.get(key)
     }
 
     /// Delete a key from the cache,it returns None in case no entry exists in the cache for the
     /// given key. Returns the deleted tensor in the other case.
     pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         inner.remove(key)
     }
 
     /// Checks if an entry exists for a given key.
     pub fn exists(&self, key: &str) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read();
         inner.map.contains_key(key)
     }
 
     /// Clears the entire cache, all existing entries are dropped.
     pub fn clear(&self) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         inner.clear();
     }
 
     /// Initializes the structure to get observability into cache operations.
     pub fn stats(&self) -> CacheStats {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read();
         CacheStats {
             entries: inner.map.len(),
             memory_used: inner.current_cache_size_bytes,
@@ -151,11 +152,12 @@ impl CacheInner {
     ///Implements the get operation for the cache.
     fn get(&mut self, key: &str) -> Option<Arc<Tensor>> {
         let entry = self.map.get(key);
+        //miss path
         if entry.is_none() {
             self.misses += 1;
             return None;
         }
-
+        //hit path
         let (tensor, node_ptr, _) = entry.unwrap();
         let tensor = Arc::clone(tensor);
         let node_ptr = *node_ptr;

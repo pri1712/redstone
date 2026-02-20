@@ -83,7 +83,7 @@ async fn server_setup() -> String {
     let addr = format!("127.0.0.1:{}", port);
     let server_addr = addr.clone();
     tokio::spawn(async move {
-        start_server(server_addr, 1024 * 1024)
+        start_server(server_addr, 1024)
             .await
             .expect("Server failed");
     });

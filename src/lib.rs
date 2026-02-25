@@ -2,6 +2,7 @@ use std::sync::Arc;
 pub mod tensor;
 pub mod cache;
 pub mod transport;
+pub mod cluster;
 
 use crate::cache::lru_cache::{Cache, CacheError};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};

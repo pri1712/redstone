@@ -1,6 +1,10 @@
-use std::iter::Map;
+use std::sync::{Arc};
+use parking_lot::RwLock;
+use std::collections::HashMap;
+use crate::cluster::client_config::ClusterClientConfig;
+use crate::cluster::node::Node;
 use crate::transport::grpc::client::RemoteCacheClient;
-
+use crate::cluster::ring::HashRing;
 /// Cluster-aware client that routes cache operations to the correct
 /// server node using consistent hashing.
 /// It delegates:
@@ -11,11 +15,28 @@ use crate::transport::grpc::client::RemoteCacheClient;
 
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
-    clients: Map<String,RemoteCacheClient>,
+    clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
+    ring: Arc<RwLock<HashRing>>,
+    client_config: ClusterClientConfig
 }
 
 impl DistributedClient {
-    fn new(clients: Map<String, RemoteCacheClient>) -> DistributedClient {
-        DistributedClient { clients }
+    pub fn new_with_config(nodes: Vec<Node>,client_config: ClusterClientConfig) -> Self {
+        let mut ring = HashRing::new(client_config.virtual_node_count);
+        for node in nodes {
+            //insert into the hashring.
+            ring.add_node(Arc::from(node));
+        }
+        Self {
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            ring: Arc::new(RwLock::new(ring)),
+            client_config,
+        }
     }
+
+    pub fn new_default(nodes: Vec<Node>) -> Self {
+       Self::new_with_config(nodes,ClusterClientConfig::default())
+    }
+
+
 }

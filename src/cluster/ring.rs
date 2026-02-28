@@ -1,6 +1,5 @@
 ///Contains the implementation for assigning hashed data to server nodes.
 use std::collections::BTreeMap;
-use std::fmt::format;
 use std::sync::Arc;
 use crate::cluster::hashing::{HashFunction, XxHash};
 use crate::cluster::node::Node;

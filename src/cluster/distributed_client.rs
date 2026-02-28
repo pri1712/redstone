@@ -1,4 +1,3 @@
-use std::iter::Map;
 use std::sync::{Arc};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -22,7 +21,7 @@ pub struct DistributedClient {
 }
 
 impl DistributedClient {
-    fn new_with_config(nodes: Vec<Node>,client_config: ClusterClientConfig) -> Self {
+    pub fn new_with_config(nodes: Vec<Node>,client_config: ClusterClientConfig) -> Self {
         let mut ring = HashRing::new(client_config.virtual_node_count);
         for node in nodes {
             //insert into the hashring.
@@ -35,7 +34,7 @@ impl DistributedClient {
         }
     }
 
-    fn new_default(nodes: Vec<Node>) -> Self {
+    pub fn new_default(nodes: Vec<Node>) -> Self {
        Self::new_with_config(nodes,ClusterClientConfig::default())
     }
 

@@ -26,7 +26,7 @@ impl DistributedClient {
         let mut ring = HashRing::new(client_config.virtual_node_count);
         for node in nodes {
             //insert into the hashring.
-            ring.add_node(node);
+            ring.add_node(Arc::from(node));
         }
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),

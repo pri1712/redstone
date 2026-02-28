@@ -6,7 +6,7 @@ use crate::proto;
 
 use crate::TensorCache;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
-use crate::CacheError;
+use crate::error::cache_error::CacheError;
 
 pub struct CacheServer {
     cache: Arc<TensorCache>,

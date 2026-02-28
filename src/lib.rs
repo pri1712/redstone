@@ -3,11 +3,13 @@ pub mod tensor;
 pub mod cache;
 pub mod transport;
 pub mod cluster;
+mod error;
 
-use crate::cache::lru_cache::{Cache, CacheError};
+use crate::cache::lru_cache::{Cache};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
 use crate::cache::lru_cache::CacheStats;
+use crate::error::cache_error::CacheError;
 
 pub mod proto {
     tonic::include_proto!("redstone");

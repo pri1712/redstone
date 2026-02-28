@@ -268,18 +268,6 @@ impl Drop for CacheInner {
 }
 
 
-impl fmt::Display for CacheError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CacheError::KeyAlreadyExists => write!(f, "Key already exists"),
-            CacheError::InvalidTensor => write!(f, "Invalid tensor"),
-            CacheError::InvalidSize => write!(f, "Invalid cache size"),
-            CacheError::OutOfMemory => write!(f, "Out of memory"),
-            CacheError::InvalidTensorMetadata => write!(f, "Invalid tensor metadata"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

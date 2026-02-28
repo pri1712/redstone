@@ -7,6 +7,7 @@ use crate::proto::red_stone_client::RedStoneClient;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
 
+#[derive(Clone)]
 pub struct RemoteCacheClient {
     client: RedStoneClient<Channel>
 }

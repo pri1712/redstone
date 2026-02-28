@@ -60,9 +60,43 @@ impl DistributedClient {
         Err(ClientError::MaxRetriesExceeded)
     }
 
-    async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError > {
-        /* send query to ring.rs, get reply from it. */
+    async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError> {
+        /* get which node to send the query to from ring.rs, then send it to the appropriate client */
+        /* from self.clients */
+        let ring = self.ring.read();
+        let selected_node = ring.get_node(key)
+                                        .ok_or(ClientError::NoNodesAvailable)?
+                                        .clone();
+        let mut client = self.get_or_create_client(&selected_node).await?;
 
+        let result = tokio::time::timeout(
+            self.client_config.timeout,
+            client.get(key.parse().unwrap()),
+        )
+            .await
+            .map_err(|_| ClientError::Timeout)?;
+
+        result
+    }
+
+    // helper functions
+    pub async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
+
+        if let Some(client) = self.clients.read().get(&node.name) {
+            //happy path
+            return Ok(client.clone());
+        }
+
+        let new_client = RemoteCacheClient::connect(node.address.clone()).await?;
+
+        let mut clients = self.clients.write();
+
+        if let Some(existing) = clients.get(&node.name) {
+            return Ok(existing.clone());
+        }
+
+        clients.insert(node.name.clone(), new_client.clone());
+        Ok(new_client)
     }
 
 }

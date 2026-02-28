@@ -36,4 +36,20 @@ impl HashRing {
             self.ring.insert(node_hash,Arc::clone(&node));
         }
     }
+
+    pub fn get_node(&self,key: &str)  -> Option<&Arc<Node>> {
+        //hash the key and go in a clockwise order in the ring, till u find a node.
+        if self.ring.is_empty() {
+            return None;
+        }
+        let key_hash = self.hasher.hash(key);
+        let node = {
+            self.ring
+                .range(key_hash..)
+                .next()
+                .or_else(|| self.ring.iter().next())
+                .map(|(_, node)| node)
+        };
+        node
+    }
 }

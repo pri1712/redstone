@@ -5,7 +5,7 @@ pub struct ClusterClientConfig {
 }
 
 impl ClusterClientConfig {
-    fn new(max_retries: u32, timeout: std::time::Duration,virtual_node_count: u32) -> Self {
+    pub fn new(max_retries: u32, timeout: std::time::Duration,virtual_node_count: u32) -> Self {
         Self {
             max_retries,
             timeout,
@@ -13,7 +13,7 @@ impl ClusterClientConfig {
         }
     }
 
-    fn new_default() -> Self {
+    pub fn new_default() -> Self {
         Self {
             max_retries: 3,
             timeout: std::time::Duration::from_secs(5),

@@ -38,4 +38,6 @@ impl DistributedClient {
     fn new_default(nodes: Vec<Node>) -> Self {
        Self::new_with_config(nodes,ClusterClientConfig::default())
     }
+
+
 }

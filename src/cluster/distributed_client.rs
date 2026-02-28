@@ -1,6 +1,10 @@
 use std::iter::Map;
-use crate::transport::grpc::client::RemoteCacheClient;
+use std::sync::{Arc};
+use parking_lot::RwLock;
+use std::collections::HashMap;
 
+use crate::transport::grpc::client::RemoteCacheClient;
+use crate::cluster::ring::HashRing;
 /// Cluster-aware client that routes cache operations to the correct
 /// server node using consistent hashing.
 /// It delegates:
@@ -11,11 +15,13 @@ use crate::transport::grpc::client::RemoteCacheClient;
 
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
-    clients: Map<String,RemoteCacheClient>,
+    clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
+    ring: Arc<RwLock<HashRing>>,
+
 }
 
 impl DistributedClient {
-    fn new(clients: Map<String, RemoteCacheClient>) -> DistributedClient {
-        DistributedClient { clients }
+    fn new(clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>, ring: Arc<RwLock<HashRing>>) -> Self {
+        Self { clients, ring }
     }
 }

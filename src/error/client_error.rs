@@ -1,4 +1,5 @@
 use thiserror::Error;
+
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("No nodes available in cluster")]
@@ -10,8 +11,11 @@ pub enum ClientError {
     #[error("Max retries exceeded")]
     MaxRetriesExceeded,
 
-    #[error("Network error: {0}")]
-    NetworkError(String),
+    #[error("Transport error")]
+    Transport(#[from] tonic::transport::Error),
+
+    #[error("gRPC status error: {0}")]
+    GrpcStatus(#[from] tonic::Status),
 
     #[error("Server error: {0}")]
     ServerError(String),
@@ -19,6 +23,18 @@ pub enum ClientError {
 
 impl ClientError {
     pub fn is_retryable(&self) -> bool {
-        matches!(self, ClientError::Timeout | ClientError::NetworkError(_))
+        match self {
+            ClientError::Timeout => true,
+            ClientError::Transport(_) => true,
+            ClientError::GrpcStatus(status) => {
+                matches!(
+                    status.code(),
+                    tonic::Code::Unavailable
+                        | tonic::Code::DeadlineExceeded
+                        | tonic::Code::Internal
+                )
+            }
+            _ => false,
+        }
     }
 }

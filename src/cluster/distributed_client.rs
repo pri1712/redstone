@@ -3,6 +3,7 @@ use std::sync::{Arc};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use crate::cluster::client_config::ClusterClientConfig;
+use crate::cluster::node::Node;
 use crate::transport::grpc::client::RemoteCacheClient;
 use crate::cluster::ring::HashRing;
 /// Cluster-aware client that routes cache operations to the correct
@@ -21,7 +22,11 @@ pub struct DistributedClient {
 }
 
 impl DistributedClient {
-    fn new(client_config: ClusterClientConfig) -> DistributedClient {
+    fn new_with_config(nodes: Vec<Node>,client_config: ClusterClientConfig) -> Self {
+        let mut ring = HashRing::
+    }
 
+    fn new_default(nodes: Vec<Node>) -> Self {
+       Self::new_with_config(nodes,ClusterClientConfig::default())
     }
 }

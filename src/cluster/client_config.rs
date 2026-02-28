@@ -1,7 +1,7 @@
 pub struct ClusterClientConfig {
-    max_retries: u32,
-    timeout: std::time::Duration,
-    virtual_node_count: u32,
+    pub max_retries: u32,
+    pub timeout: std::time::Duration,
+    pub virtual_node_count: u32,
 }
 
 impl ClusterClientConfig {

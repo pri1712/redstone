@@ -23,7 +23,16 @@ pub struct DistributedClient {
 
 impl DistributedClient {
     fn new_with_config(nodes: Vec<Node>,client_config: ClusterClientConfig) -> Self {
-        let mut ring = HashRing::
+        let mut ring = HashRing::new(client_config.virtual_node_count);
+        for node in nodes {
+            //insert into the hashring.
+            ring.add_node(node);
+        }
+        Self {
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            ring: Arc::new(RwLock::new(ring)),
+            client_config,
+        }
     }
 
     fn new_default(nodes: Vec<Node>) -> Self {

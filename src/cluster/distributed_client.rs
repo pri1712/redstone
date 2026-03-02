@@ -17,6 +17,7 @@ use crate::cluster::ring::HashRing;
 use crate::tensor::tensor::Tensor;
 use crate::error::client_error::ClientError;
 use crate::tensor::meta::TensorMeta;
+use crate::cache::cache_stats::CacheStats;
 
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
@@ -43,11 +44,8 @@ impl DistributedClient {
        Self::new_with_config(nodes,ClusterClientConfig::default())
     }
 
-    ///get a tensor from the cache
-    /// returns: Ok(someData) if the key is found in the cache.
-    /// Ok(None) if the key is not in the cache
-    /// An error if there was some error while processing the request.
     pub async fn get(&self, key: &str) ->Result<Option<Arc<Tensor>>, ClientError > {
+        /* get a tensor from the cache */
         for trial in 0..self.client_config.max_retries {
             match self.get_inner(key).await {
                 Ok(data) => return Ok(data),
@@ -61,9 +59,8 @@ impl DistributedClient {
         Err(ClientError::MaxRetriesExceeded)
     }
 
-    /// puts a tensor in the cache
-    /// returns:
     pub async fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>) -> Result<(), ClientError > {
+        /* inserts a key and tensor specified by the user */
         for trial in 0..self.client_config.max_retries {
             match self.put_inner(&*key, meta.clone(), data.clone()).await {
                 Ok(..) => return Ok(()),
@@ -75,6 +72,43 @@ impl DistributedClient {
             }
         }
         Err(ClientError::MaxRetriesExceeded)
+    }
+
+    pub async fn delete(&self, key: &str) -> Result<(), ClientError > {
+        /* deletes a key from the cache specified by key */
+        for trial in 0..self.client_config.max_retries {
+            match self.delete_inner(key).await {
+                Ok(..) => return Ok(()),
+                Err(e) if e.is_retryable() && trial < self.client_config.max_retries - 1 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (trial as u64 + 1))).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(ClientError::MaxRetriesExceeded)
+    }
+
+    pub async fn get_per_server_stats(&self) -> Result<Vec<CacheStats>, ClientError> {
+        let clients: Vec<_> = {
+            let guard = self.clients.read();
+            guard.values().cloned().collect()
+        };
+
+        let mut stats_vec = Vec::with_capacity(clients.len());
+
+        for mut client in clients {
+            let result = tokio::time::timeout(
+                self.client_config.timeout,
+                client.get_stats(),
+            )
+                .await
+                .map_err(|_| ClientError::Timeout)?;
+
+            let stats = result?;
+            stats_vec.push(stats.into());
+        }
+        Ok(stats_vec)
     }
 
     async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError> {
@@ -105,6 +139,22 @@ impl DistributedClient {
         let result = tokio::time::timeout(
             self.client_config.timeout,
             client.put(key.to_string(), meta, data.clone()),
+        )
+            .await
+            .map_err(|_| ClientError::Timeout)?;
+        result
+    }
+
+    async fn delete_inner(&self,key: &str) ->Result<(), ClientError> {
+        let ring  = self.ring.read();
+        let selected_node = ring.get_node(key)
+            .ok_or(ClientError::NoNodesAvailable)?
+            .clone();
+        let mut client = self.get_or_create_client(&selected_node).await?;
+
+        let result = tokio::time::timeout(
+            self.client_config.timeout,
+            client.delete(key.to_string()),
         )
             .await
             .map_err(|_| ClientError::Timeout)?;

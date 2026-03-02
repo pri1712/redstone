@@ -9,7 +9,7 @@
 use std::sync::{Arc};
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use crate::cluster::client_config::ClusterClientConfig;
+use crate::cluster::config::runtime_config::ClusterClientConfig;
 use crate::cluster::node::Node;
 use crate::transport::grpc::client::RemoteCacheClient;
 use crate::cluster::ring::HashRing;

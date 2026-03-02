@@ -67,7 +67,7 @@ impl DistributedClient {
         for trial in 0..self.client_config.max_retries {
             match self.put_inner(&*key, meta.clone(), data.clone()).await {
                 Ok(..) => return Ok(()),
-                Err(e) if e.is_retryable() && trial < self.client_config.max_retries => {
+                Err(e) if e.is_retryable() && trial < self.client_config.max_retries - 1 => {
                     tokio::time::sleep(std::time::Duration::from_millis(50 * (trial as u64 + 1))).await;
                     continue;
                 }

@@ -16,6 +16,8 @@ use crate::cluster::ring::HashRing;
 
 use crate::tensor::tensor::Tensor;
 use crate::error::client_error::ClientError;
+use crate::tensor::meta::TensorMeta;
+
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
     clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
@@ -59,10 +61,26 @@ impl DistributedClient {
         Err(ClientError::MaxRetriesExceeded)
     }
 
+    /// puts a tensor in the cache
+    /// returns:
+    pub async fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>) -> Result<(), ClientError > {
+        for trial in 0..self.client_config.max_retries {
+            match self.put_inner(&*key, meta.clone(), data.clone()).await {
+                Ok(..) => return Ok(()),
+                Err(e) if e.is_retryable() && trial < self.client_config.max_retries - 1 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (trial as u64 + 1))).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(ClientError::MaxRetriesExceeded)
+    }
+
     async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError> {
         /* get which node to send the query to from ring.rs, then send it to the appropriate client */
         /* from self.clients */
-        let ring = self.ring.read();
+        let ring  = self.ring.read();
         let selected_node = ring.get_node(key)
                                         .ok_or(ClientError::NoNodesAvailable)?
                                         .clone();
@@ -74,18 +92,31 @@ impl DistributedClient {
         )
             .await
             .map_err(|_| ClientError::Timeout)?;
+        result
+    }
 
+    async fn put_inner(&self, key: &str, meta: TensorMeta, data: Vec<u8>) ->Result<(), ClientError> {
+        let ring  = self.ring.read();
+        let selected_node = ring.get_node(key)
+            .ok_or(ClientError::NoNodesAvailable)?
+            .clone();
+        let mut client = self.get_or_create_client(&selected_node).await?;
+
+        let result = tokio::time::timeout(
+            self.client_config.timeout,
+            client.put(key.to_string(), meta, data.clone()),
+        )
+            .await
+            .map_err(|_| ClientError::Timeout)?;
         result
     }
 
     // helper functions
-    pub async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
-
+    async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
         if let Some(client) = self.clients.read().get(&node.name) {
             //happy path
             return Ok(client.clone());
         }
-
         let new_client = RemoteCacheClient::connect(node.address.clone()).await?;
 
         let mut clients = self.clients.write();
@@ -97,8 +128,11 @@ impl DistributedClient {
         clients.insert(node.name.clone(), new_client.clone());
         Ok(new_client)
     }
+
+
 }
 #[cfg(test)]
+//these tests only test basic code functionality. integration tests are in distributed_client_integration.rs
 mod tests {
     use super::*;
     use crate::cluster::node::Node;

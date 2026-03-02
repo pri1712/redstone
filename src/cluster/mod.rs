@@ -1,5 +1,5 @@
 pub mod distributed_client;
 mod hashing;
-mod node;
+pub mod node;
 mod ring;
-mod client_config;
+pub mod client_config;

@@ -14,6 +14,6 @@ pub enum CacheError {
     #[error("Out of memory, increase cache size to insert larger tensors")]
     OutOfMemory,
 
-    #[error("Invalid tensor metadat")]
+    #[error("Invalid tensor metadata")]
     InvalidTensorMetadata,
 }

@@ -1,5 +1,5 @@
 //declaration for tensor metadata
-
+#[derive(Clone)]
 pub struct TensorMeta {
     dtype: DType, //data type stored in the tensor
     shape: Vec<usize>, //shape of tensor (dimensions)
@@ -68,8 +68,7 @@ impl TensorMeta {
 
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum DType{
     F32,
     F64,
@@ -90,8 +89,7 @@ impl DType {
     }
 }
 
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone,PartialEq)]
 pub enum StorageLayout{
     RowMajor,
     ColumnMajor,

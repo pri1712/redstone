@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct CacheStats {
-    pub entries: usize,
+    pub entries: u64,
     pub memory_used: u64,
     pub memory_limit: u64,
     pub hits: u64,
@@ -23,6 +23,19 @@ impl CacheStats {
             0.0
         } else {
             self.memory_used as f64 / self.memory_limit as f64
+        }
+    }
+}
+
+impl From<crate::transport::grpc::client::CacheStats> for CacheStats {
+    fn from(value: crate::transport::grpc::client::CacheStats) -> Self {
+        Self {
+            entries: value.entries,
+            memory_used: value.memory_used,
+            memory_limit: value.memory_limit,
+            hits: value.hits,
+            misses: value.misses,
+            evictions: value.evictions,
         }
     }
 }

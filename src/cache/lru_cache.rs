@@ -76,7 +76,7 @@ impl Cache {
     pub fn stats(&self) -> CacheStats {
         let inner = self.inner.read();
         CacheStats {
-            entries: inner.map.len(),
+            entries: inner.map.len() as u64,
             memory_used: inner.current_cache_size_bytes,
             memory_limit: inner.max_cache_size_bytes,
             hits: inner.hits,

@@ -166,6 +166,7 @@ impl DistributedClient {
         ring.add_node(Arc::from(node));
     }
 
+    // WARNING: removing a node causes data loss in current implementation
     pub async fn remove_node(&self, node: Node) -> Result<(), ClientError> {
         let mut ring = self.ring.write();
         let node_name = node.name.clone();

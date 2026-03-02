@@ -55,6 +55,7 @@ impl HashRing {
         }
     }
 
+    // WARNING: removing a node causes data loss in current implementation
     pub fn remove_node(&mut self, node: Arc<Node>) -> bool {
         let num_virtual_nodes = self.virtual_node_count;
         let node_name = node.name.clone();

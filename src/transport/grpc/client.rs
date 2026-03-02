@@ -19,10 +19,8 @@ impl RemoteCacheClient {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
             addr
         } else {
-            println!("in else in remotecacheclient");
             format!("http://{}", addr)
         };
-        println!("url is {}", url );
         let client = RedStoneClient::connect(url).await?;
         Ok(Self { client })
     }

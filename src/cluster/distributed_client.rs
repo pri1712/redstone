@@ -21,7 +21,7 @@ use crate::tensor::meta::TensorMeta;
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
     clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
-    pub ring: Arc<RwLock<HashRing>>,
+    ring: Arc<RwLock<HashRing>>,
     client_config: ClusterClientConfig
 }
 

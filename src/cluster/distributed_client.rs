@@ -21,7 +21,7 @@ use crate::tensor::meta::TensorMeta;
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
     clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
-    ring: Arc<RwLock<HashRing>>,
+    pub ring: Arc<RwLock<HashRing>>,
     client_config: ClusterClientConfig
 }
 
@@ -132,6 +132,7 @@ impl DistributedClient {
 
 }
 #[cfg(test)]
+//these tests only test basic code functionality. integration tests are in distributed_client_integration.rs
 mod tests {
     use super::*;
     use crate::cluster::node::Node;

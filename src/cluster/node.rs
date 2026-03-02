@@ -1,5 +1,6 @@
 /// A node is an abstraction for a server, it bundles the name of the server and its IP address
 /// into a single instance.
+#[derive(Debug)]
 pub struct Node {
     //contains the mapping from ip address to dns name for a server
     pub address: String,

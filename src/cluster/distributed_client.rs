@@ -62,7 +62,7 @@ impl DistributedClient {
     async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError> {
         /* get which node to send the query to from ring.rs, then send it to the appropriate client */
         /* from self.clients */
-        let ring = self.ring.read();
+        let ring  = self.ring.read();
         let selected_node = ring.get_node(key)
                                         .ok_or(ClientError::NoNodesAvailable)?
                                         .clone();
@@ -74,18 +74,17 @@ impl DistributedClient {
         )
             .await
             .map_err(|_| ClientError::Timeout)?;
-
         result
     }
 
     // helper functions
     pub async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
-
+        println!("Getting or creating client for node {:?}", node);
         if let Some(client) = self.clients.read().get(&node.name) {
             //happy path
             return Ok(client.clone());
         }
-
+        println!("node address is {}:" ,node.address.clone());
         let new_client = RemoteCacheClient::connect(node.address.clone()).await?;
 
         let mut clients = self.clients.write();

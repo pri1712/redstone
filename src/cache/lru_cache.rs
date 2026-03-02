@@ -5,7 +5,7 @@ use std::sync::{Arc};
 use parking_lot::RwLock;
 pub(crate) use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
-
+use crate::error::cache_error::CacheError;
 static APPROX_LRU: f32 = 0.9;
 pub struct Cache {
     inner: RwLock<CacheInner>,
@@ -267,32 +267,9 @@ impl Drop for CacheInner {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CacheError {
-    KeyAlreadyExists,
-    InvalidTensor,
-    InvalidSize,
-    OutOfMemory,
-    InvalidTensorMetadata,
-}
-
-impl fmt::Display for CacheError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CacheError::KeyAlreadyExists => write!(f, "Key already exists"),
-            CacheError::InvalidTensor => write!(f, "Invalid tensor"),
-            CacheError::InvalidSize => write!(f, "Invalid cache size"),
-            CacheError::OutOfMemory => write!(f, "Out of memory"),
-            CacheError::InvalidTensorMetadata => write!(f, "Invalid tensor metadata"),
-        }
-    }
-}
-
-impl std::error::Error for CacheError {}
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
     use crate::tensor::tensor::Tensor;

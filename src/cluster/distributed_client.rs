@@ -161,6 +161,23 @@ impl DistributedClient {
         result
     }
 
+    pub async fn add_node(&self, node: Node) {
+        let mut ring = self.ring.write();
+        ring.add_node(Arc::from(node));
+    }
+
+    // WARNING: removing a node causes data loss in current implementation
+    pub async fn remove_node(&self, node: Node) -> Result<(), ClientError> {
+        let node_name = node.name.clone();
+        {
+            let mut ring = self.ring.write();
+            ring.remove_node(Arc::from(node));
+        }
+        let mut clients = self.clients.write();
+        clients.remove(&node_name);
+        Ok(())
+    }
+
     // helper functions
     async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
         if let Some(client) = self.clients.read().get(&node.name) {

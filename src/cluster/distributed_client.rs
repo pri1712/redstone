@@ -77,6 +77,20 @@ impl DistributedClient {
         Err(ClientError::MaxRetriesExceeded)
     }
 
+    pub async fn delete(&self, key: &str) -> Result<(), ClientError > {
+        for trial in 0..self.client_config.max_retries {
+            match self.delete_inner(key).await {
+                Ok(..) => return Ok(()),
+                Err(e) if e.is_retryable() && trial < self.client_config.max_retries - 1 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (trial as u64 + 1))).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(ClientError::MaxRetriesExceeded)
+    }
+
     async fn get_inner(&self,key: &str) ->Result<Option<Arc<Tensor>>, ClientError> {
         /* get which node to send the query to from ring.rs, then send it to the appropriate client */
         /* from self.clients */
@@ -105,6 +119,22 @@ impl DistributedClient {
         let result = tokio::time::timeout(
             self.client_config.timeout,
             client.put(key.to_string(), meta, data.clone()),
+        )
+            .await
+            .map_err(|_| ClientError::Timeout)?;
+        result
+    }
+
+    async fn delete_inner(&self,key: &str) ->Result<(), ClientError> {
+        let ring  = self.ring.read();
+        let selected_node = ring.get_node(key)
+            .ok_or(ClientError::NoNodesAvailable)?
+            .clone();
+        let mut client = self.get_or_create_client(&selected_node).await?;
+
+        let result = tokio::time::timeout(
+            self.client_config.timeout,
+            client.delete(key.to_string()),
         )
             .await
             .map_err(|_| ClientError::Timeout)?;

@@ -14,7 +14,7 @@ pub enum ClientError {
     #[error("Transport error")]
     Transport(#[from] tonic::transport::Error),
 
-    #[error("gRPC status error: {0}")]
+    #[error("gRPC status error")]
     GrpcStatus(#[from] tonic::Status),
 
     #[error("Server error: {0}")]
@@ -26,14 +26,12 @@ impl ClientError {
         match self {
             ClientError::Timeout => true,
             ClientError::Transport(_) => true,
-            ClientError::GrpcStatus(status) => {
-                matches!(
-                    status.code(),
-                    tonic::Code::Unavailable
-                        | tonic::Code::DeadlineExceeded
-                        | tonic::Code::Internal
-                )
-            }
+            ClientError::GrpcStatus(status) => matches!(
+                status.code(),
+                tonic::Code::Unavailable
+                    | tonic::Code::DeadlineExceeded
+                    | tonic::Code::Internal
+            ),
             _ => false,
         }
     }

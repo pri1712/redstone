@@ -59,12 +59,13 @@ impl HashRing {
     pub fn remove_node(&mut self, node: Arc<Node>) -> bool {
         let num_virtual_nodes = self.virtual_node_count;
         let node_name = node.name.clone();
+        let mut removed_any = false;
         for i in 0..num_virtual_nodes {
             let virual_node_key = format!("{}:#:{}", node_name, i);
             let node_hash = self.hasher.hash(&virual_node_key);
-            self.ring.remove(&node_hash);
+            removed_any |= self.ring.remove(&node_hash).is_some();
         }
-        true
+        removed_any
     }
 
     pub fn len(&self) -> usize {

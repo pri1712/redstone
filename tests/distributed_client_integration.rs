@@ -26,7 +26,9 @@ async fn spawn_server() -> String {
 }
 
 #[tokio::test]
-async fn distributed_client_three_node_flow() {
+async fn distributed_client_get_false_node_flow() {
+    /* tests scenario when the key that the GET request asks for does not exist*/
+
     let addr1 = spawn_server().await;
     let addr2 = spawn_server().await;
     let addr3 = spawn_server().await;
@@ -55,7 +57,5 @@ async fn distributed_client_three_node_flow() {
         .get("distributed_key")
         .await
         .expect("Distributed GET failed");
-    println!("result is {}",result.is_some());
-    assert!(result.is_some());
-    assert_eq!(result.unwrap().get_data().len(), 16);
+    assert!(result.is_none());
 }

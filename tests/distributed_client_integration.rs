@@ -165,7 +165,7 @@ async fn distributed_get_stats_flow() {
         .expect("get_per_server_stats failed");
 
     assert!(!stats.is_empty(), "No stats returned");
-
+    assert_eq!(stats.len(), 3, "Expected stats for all 3 servers");
     let total_entries: u64 = stats.iter().map(|s| s.entries).sum();
     assert_eq!(
         total_entries,

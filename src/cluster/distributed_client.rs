@@ -17,7 +17,7 @@ use crate::cluster::ring::HashRing;
 use crate::tensor::tensor::Tensor;
 use crate::error::client_error::ClientError;
 use crate::tensor::meta::TensorMeta;
-use crate::cache::lru_cache::CacheStats;
+use crate::cache::cache_stats::CacheStats;
 
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,

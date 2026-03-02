@@ -55,9 +55,14 @@ impl HashRing {
         }
     }
 
-    pub fn remove_node(&mut self, node: Arc<Node>) {
+    pub fn remove_node(&mut self, node: Arc<Node>) -> bool {
+        let num_virtual_nodes = self.virtual_node_count;
         let node_name = node.name.clone();
-        let node_address = node.address.clone();
-
+        for i in 0..num_virtual_nodes {
+            let virual_node_key = format!("{}:#:{}", node_name, i);
+            let node_hash = self.hasher.hash(&virual_node_key);
+            self.ring.remove(&node_hash);
+        }
+        true
     }
 }

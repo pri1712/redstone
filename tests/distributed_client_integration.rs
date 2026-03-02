@@ -167,8 +167,6 @@ async fn distributed_get_stats_flow() {
     assert!(!stats.is_empty(), "No stats returned");
 
     let total_entries: u64 = stats.iter().map(|s| s.entries).sum();
-    let memory_used: u64 = stats.iter().map(|s| s.memory_used).sum();
-    println!("Memory used: {}", memory_used);
     assert_eq!(
         total_entries,
         10,

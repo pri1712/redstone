@@ -44,7 +44,9 @@ impl RemoteCacheClient {
             Err(status) => {
                 match status.code() {
                     Code::NotFound => Ok(None),
-                    _ => Err(ClientError::ServerError("Internal server error".to_string())),
+                    Code::Internal => Err(ClientError::ServerError("Internal server error".to_string())),
+                    Code::Aborted => Err(ClientError::GrpcStatus(status)),
+                    _ => Err(ClientError::ServerError("Unknown error".to_string())),
                 }
             }
         }

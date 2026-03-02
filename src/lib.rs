@@ -3,7 +3,7 @@ pub mod tensor;
 pub mod cache;
 pub mod transport;
 pub mod cluster;
-mod error;
+pub mod error;
 
 use crate::cache::lru_cache::{Cache};
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};

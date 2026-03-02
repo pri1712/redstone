@@ -1,3 +1,11 @@
+/// Cluster-aware client that routes cache operations to the correct
+/// server node using consistent hashing.
+/// It delegates:
+/// - key → node mapping to the HashRing
+/// - network communication to RemoteCacheClient
+/// It contains no hashing or transport logic itself, it only serves as the main point of entry for
+/// clients
+
 use std::sync::{Arc};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -8,15 +16,6 @@ use crate::cluster::ring::HashRing;
 
 use crate::tensor::tensor::Tensor;
 use crate::error::client_error::ClientError;
-use crate::error::cache_error::CacheError;
-/// Cluster-aware client that routes cache operations to the correct
-/// server node using consistent hashing.
-/// It delegates:
-/// - key → node mapping to the HashRing
-/// - network communication to RemoteCacheClient
-/// It contains no hashing or transport logic itself, it only serves as the main point of entry for
-/// clients
-
 pub struct DistributedClient {
     //map servers node name to a single remoteCacheClient instance,
     clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
@@ -98,5 +97,31 @@ impl DistributedClient {
         clients.insert(node.name.clone(), new_client.clone());
         Ok(new_client)
     }
-
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cluster::node::Node;
+
+    #[test]
+    fn test_distributed_client_new() {
+        /* tests distributed client creation with default config */
+        let node_one = Node::new(
+            "node1".to_string(),
+            "127.0.0.1:50051".to_string(),
+        );
+
+        let node_two = Node::new(
+            "node2".to_string(),
+            "127.0.0.1:50052".to_string(),
+        );
+
+        let client = DistributedClient::new_default(vec![node_one, node_two]);
+
+        let ring = client.ring.read();
+        let selected = ring.get_node("test_key");
+
+        assert!(selected.is_some());
+    }
+}
+

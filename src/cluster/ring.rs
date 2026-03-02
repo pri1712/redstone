@@ -65,4 +65,29 @@ impl HashRing {
         }
         true
     }
+
+    pub fn len(&self) -> usize {
+        self.ring.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_ring() {
+        let ring = HashRing::new(3);
+        assert_eq!(ring.virtual_node_count, 3);
+    }
+
+    #[test]
+    fn test_add_node() {
+        let mut ring = HashRing::new(3);
+        let node_address = "http://127.0.0.1:5000";
+        let node_name = "test_node";
+        let node = Node::new(node_address,node_name);
+        ring.add_node(Arc::new(node));
+        assert_eq!(ring.len(), 3);
+    }
 }

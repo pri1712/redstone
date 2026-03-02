@@ -25,18 +25,6 @@ impl HashRing {
         }
     }
 
-    /// adds a node to the existing hash ring.
-    /// This involves computing its hash and inserting it into the hash ring.
-    pub fn add_node(&mut self, node: Arc<Node>) {
-        let node_name = node.name.clone();
-        let num_virtual_nodes = self.virtual_node_count;
-        for i in 0..num_virtual_nodes {
-            let virtual_node_key = format!("{}:#:{}", node_name, i);
-            let node_hash = self.hasher.hash(&virtual_node_key);
-            self.ring.insert(node_hash,Arc::clone(&node));
-        }
-    }
-
     pub fn get_node(&self,key: &str)  -> Option<&Arc<Node>> {
         //hash the key and go in a clockwise order in the ring, till u find a node.
         if self.ring.is_empty() {
@@ -51,5 +39,25 @@ impl HashRing {
                 .map(|(_, node)| node)
         };
         node
+    }
+
+    //utility functions
+
+    /// adds a node to the existing hash ring.
+    /// This involves computing its hash and inserting it into the hash ring.
+    pub fn add_node(&mut self, node: Arc<Node>) {
+        let node_name = node.name.clone();
+        let num_virtual_nodes = self.virtual_node_count;
+        for i in 0..num_virtual_nodes {
+            let virtual_node_key = format!("{}:#:{}", node_name, i);
+            let node_hash = self.hasher.hash(&virtual_node_key);
+            self.ring.insert(node_hash,Arc::clone(&node));
+        }
+    }
+
+    pub fn remove_node(&mut self, node: Arc<Node>) {
+        let node_name = node.name.clone();
+        let node_address = node.address.clone();
+
     }
 }

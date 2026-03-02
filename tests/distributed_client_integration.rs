@@ -5,7 +5,7 @@ use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
 
 use std::time::Duration;
 use tokio::time::sleep;
-use rand::{rng, RngExt};
+use rand::{random_range, rng, RngExt};
 use redstone::transport::grpc::client::RemoteCacheClient;
 
 fn random_port() -> u16 {
@@ -30,17 +30,7 @@ async fn spawn_server() -> String {
 async fn distributed_client_get_false_node_flow() {
     /* tests scenario when the key that the GET request asks for does not exist*/
 
-    let addr1 = spawn_server().await;
-    let addr2 = spawn_server().await;
-    let addr3 = spawn_server().await;
-
-    sleep(Duration::from_millis(300)).await;
-
-    let node_one = Node::new(addr1,"server-one");
-    let node_two = Node::new(addr2,"server-two");
-    let node_three = Node::new(addr3,"server-three");
-
-    let nodes = vec![node_one, node_two, node_three];
+   let nodes = initialize_servers().await;
 
     let client = DistributedClient::new_default(nodes);
 
@@ -61,17 +51,8 @@ async fn distributed_client_get_false_node_flow() {
 
 #[tokio::test]
 async fn distributed_client_put_flow() {
-    let addr1 = spawn_server().await;
-    let addr2 = spawn_server().await;
-    let addr3 = spawn_server().await;
 
-    sleep(Duration::from_millis(300)).await;
-
-    let node_one = Node::new(addr1.clone(), "server-one");
-    let node_two = Node::new(addr2.clone(), "server-two");
-    let node_three = Node::new(addr3.clone(), "server-three");
-
-    let nodes = vec![node_one, node_two, node_three];
+    let nodes = initialize_servers().await;
 
     let client = DistributedClient::new_default(nodes);
 
@@ -94,17 +75,7 @@ async fn distributed_client_put_flow() {
 
 #[tokio::test]
 async fn distributed_delete_flow() {
-    let addr1 = spawn_server().await;
-    let addr2 = spawn_server().await;
-    let addr3 = spawn_server().await;
-
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    let nodes = vec![
-        Node::new(addr1.clone(), "node1"),
-        Node::new(addr2.clone(), "node2"),
-        Node::new(addr3.clone(), "node3"),
-    ];
+   let nodes = initialize_servers().await;
 
     let client = DistributedClient::new_default(nodes);
 
@@ -132,17 +103,8 @@ async fn distributed_delete_flow() {
 
 #[tokio::test]
 async fn distributed_get_stats_flow() {
-    let addr1 = spawn_server().await;
-    let addr2 = spawn_server().await;
-    let addr3 = spawn_server().await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-
-    let nodes = vec![
-        Node::new(addr1.clone(), "node1"),
-        Node::new(addr2.clone(), "node2"),
-        Node::new(addr3.clone(), "node3"),
-    ];
+    let nodes = initialize_servers().await;
 
     let client = DistributedClient::new_default(nodes);
 
@@ -172,4 +134,70 @@ async fn distributed_get_stats_flow() {
         10,
         "Total entries across cluster incorrect"
     );
+}
+
+#[tokio::test]
+async fn distributed_client_equal_distribution() {
+    let expected = 200;
+    let tolerance = 50;
+    let nodes = initialize_servers().await;
+    let client = DistributedClient::new_default(nodes);
+
+    let meta = TensorMeta::new(
+        DType::F32,
+        vec![4],
+        StorageLayout::RowMajor,
+    ).unwrap();
+
+    let bytes = vec![0u8; 16];
+
+    for i in 0..600 {
+        client.put(format!("stats_key_{}", i), meta.clone(), bytes.clone())
+            .await
+            .expect("PUT failed");
+    }
+
+    let stats = client.get_per_server_stats()
+        .await
+        .expect("get_per_server_stats failed");
+
+    let server_one_entries: u64 = stats[0].entries;
+    let server_two_entries: u64 = stats[1].entries;
+    let server_three_entries: u64 = stats[2].entries;
+    assert!(
+        (server_one_entries as i64 - expected).abs() <= tolerance,
+        "Expected ~{} ±{}, got {}",
+        expected,
+        tolerance,
+        server_one_entries
+    );
+    assert!(
+        (server_two_entries as i64 - expected).abs() <= tolerance,
+        "Expected ~{} ±{}, got {}",
+        expected,
+        tolerance,
+        server_two_entries
+    );
+    assert!(
+        (server_three_entries as i64 - expected).abs() <= tolerance,
+        "Expected ~{} ±{}, got {}",
+        expected,
+        tolerance,
+        server_three_entries
+    );
+
+}
+
+async fn initialize_servers() -> Vec<Node> {
+
+    let addr1 = spawn_server().await;
+    let addr2 = spawn_server().await;
+    let addr3 = spawn_server().await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let nodes = vec![
+        Node::new(addr1.clone(), "node1"),
+        Node::new(addr2.clone(), "node2"),
+        Node::new(addr3.clone(), "node3"),
+    ];
+    nodes
 }

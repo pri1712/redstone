@@ -12,7 +12,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let file_config = ClusterClientFileConfig::load(&config_path)?;
     let (nodes, runtime_config) = file_config.into_runtime();
-
+    if nodes.is_empty() {
+        return Err("No nodes provided.".into());
+    }
     println!("Initializing distributed client with {} nodes", nodes.len());
 
     let client = DistributedClient::new_with_config(nodes, runtime_config);
@@ -29,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes: Vec<u8> = unsafe {
         std::slice::from_raw_parts(
             data.as_ptr() as *const u8,
-            data.len() * std::mem::size_of::<f32>(),
+            data.len() * size_of::<f32>(),
         )
             .to_vec()
     };

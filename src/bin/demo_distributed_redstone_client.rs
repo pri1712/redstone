@@ -28,13 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let data = vec![1.0f32; 200];
-    let bytes: Vec<u8> = unsafe {
-        std::slice::from_raw_parts(
-            data.as_ptr() as *const u8,
-            data.len() * size_of::<f32>(),
-        )
-            .to_vec()
-    };
+    let bytes = f32_to_bytes(&data);
 
     client.put("test_tensor".to_string(), meta, bytes).await?;
     println!("Put succeeded");
@@ -69,14 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         let data = vec![i as f32; 25];
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(
-                data.as_ptr() as *const u8,
-                data.len() * 4,
-            )
-                .to_vec()
-        };
-
+        let bytes = f32_to_bytes(&data);
         client.put(key.clone(), meta, bytes).await?;
         println!("Put {}", key);
     }
@@ -125,3 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+fn f32_to_bytes(data: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() * std::mem::size_of::<f32>());
+    for v in data {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+

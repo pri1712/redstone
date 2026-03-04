@@ -11,10 +11,10 @@ A high-performance, distributed tensor cache built in Rust, optimized for ML inf
 - gRPC server and client
 - Network protocol (Protocol Buffers)
 - Basic put/get/delete/observability operations
-
-**In Progress:**
 - Consistent hashing for sharding
 - Multi-node cluster support
+
+**In Progress:**
 - Replication for fault tolerance
 
 **Planned:**
@@ -53,14 +53,14 @@ cargo build --release
 Start a cache server with 1GB of memory:
 
 ```bash
-cargo run --release --bin server
+cargo run --release --bin redstone_server
 # Server starts on 127.0.0.1:50051 with 1GB cache
 ```
 
 Or customize the address and cache size:
 
 ```bash
-cargo run --release --bin server 0.0.0.0:50051 10737418240
+cargo run --release --bin redstone_server 0.0.0.0:50051 10737418240
 # 10GB cache on all interfaces
 ```
 
@@ -70,14 +70,14 @@ Try the example client to test the server:
 
 ```bash
 # In another terminal
-cargo run --bin client
+cargo run --bin redstone_client
 
 # The client should be able to connect to the server which was started in the previous step.
 ```
 
 ## Features
 
-### Current Features (v0.1.0)
+### Current Features (v0.1.1)
 
 - **Memory-efficient LRU eviction**: Evicts based on tensor size, not count
 - **High performance**: O(1) get/put operations
@@ -86,10 +86,10 @@ cargo run --bin client
 - **Type-safe**: Protocol Buffers for wire format
 - **Multiple data types**: F32, F64, I32, I64, U8
 - **Flexible layouts**: Row-major and column-major storage
+- **Distributed sharding**: Consistent hashing across N nodes
 
 ### Planned Features
 
-- **Distributed sharding**: Consistent hashing across N nodes
 - **Replication**: Configurable replication factor (default: 3)
 - **Fault tolerance**: Survive node failures
 - **Client-side caching**: L1 cache for hot data

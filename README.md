@@ -100,38 +100,6 @@ cargo run --bin redstone_client
 
 ## Architecture
 
-### Current (Single Node)
-```mermaid
-graph TD
-    subgraph ClientSide ["Client Side"]
-        direction TB
-        S1[Service 1]
-        S2[Service 2]
-        S3[Service 3]
-        
-        RC[Redstone client library]
-        
-        S1 --> RC
-        S2 --> RC
-        S3 --> RC
-    end
-
-    subgraph ServerSide ["Single Node Server"]
-        direction TB
-        RS[Redstone server]
-        
-        subgraph Internal ["In-Memory Tensor Cache"]
-            direction TB
-            LRU[LRU Cache]
-        end
-        RS --> LRU
-    end
-    RC -- "gRPC" --> RS
-```
-
-
-### Future (Distributed)
-
 ```mermaid
 graph TD
     subgraph ClientSide ["Client Side"]

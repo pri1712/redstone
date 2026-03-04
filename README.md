@@ -1,6 +1,6 @@
 # Redstone
 
-> **ACTIVE DEVELOPMENT**: Redstone is currently a **single-node cache** with network layer. Distributed features (sharding, replication, fault tolerance) are actively being developed.
+> **ACTIVE DEVELOPMENT**: Redstone is currently a **distributed cache**, it does not have support for replication yet. Fault tolerance and replication are actively being worked upon.
 
 A high-performance, distributed tensor cache built in Rust, optimized for ML inference and training workloads.
 

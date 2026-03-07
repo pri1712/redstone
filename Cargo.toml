@@ -31,5 +31,8 @@ name = "redstone_client"
 path = "src/bin/demo_distributed_redstone_client.rs"
 
 [[bench]]
-name = "single_node_benchmark"
+name = "cache_microbenchmark"
+harness = false
+[[bench]]
+name = "distributed_macrobenchmark"
 harness = false

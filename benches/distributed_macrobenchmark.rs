@@ -6,7 +6,7 @@ use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-// 1GB
+// 10GB
 const CACHE_SIZE: u64 = 1024 * 1024 * 1024 * 1024;
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {

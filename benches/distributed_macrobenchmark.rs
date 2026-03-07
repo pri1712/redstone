@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use redstone::cluster::distributed_client::DistributedClient;
 use redstone::cluster::node::Node;
 use redstone::transport::grpc::server::start_server;
@@ -51,7 +52,7 @@ fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     (meta, bytes)
 }
 
-async fn benchmark_put_latency(client: &DistributedClient, elements: usize, run_id: &str) {
+async fn benchmark_put_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -77,7 +78,7 @@ async fn benchmark_put_latency(client: &DistributedClient, elements: usize, run_
     print_latency_stats("PUT", samples);
 }
 
-async fn benchmark_get_hit_latency(client: &DistributedClient, elements: usize, run_id: &str) {
+async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -112,7 +113,7 @@ async fn benchmark_get_hit_latency(client: &DistributedClient, elements: usize, 
     print_latency_stats("GET HIT", samples);
 }
 
-async fn benchmark_get_miss_latency(client: &DistributedClient, run_id: &str) {
+async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str) {
     const SAMPLES: usize = 200;
 
     let mut samples = Vec::with_capacity(SAMPLES);
@@ -132,7 +133,7 @@ async fn benchmark_get_miss_latency(client: &DistributedClient, run_id: &str) {
     print_latency_stats("GET MISS", samples);
 }
 
-async fn benchmark_get_miss_throughput(client: &DistributedClient, run_id: &str) {
+async fn benchmark_get_miss_throughput(client: Arc<DistributedClient>, run_id: &str) {
     const TOTAL_OPS: usize = 10_000;
     let start = Instant::now();
 
@@ -151,7 +152,7 @@ async fn benchmark_get_miss_throughput(client: &DistributedClient, run_id: &str)
     );
 }
 
-async fn benchmark_put_throughput(client: &DistributedClient, elements: usize, run_id: &str) {
+async fn benchmark_put_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const TOTAL_OPS: usize = 10_000;
     let start = Instant::now();
 
@@ -169,7 +170,7 @@ async fn benchmark_put_throughput(client: &DistributedClient, elements: usize, r
     );
 }
 
-async fn benchmark_distribution(client: &DistributedClient, elements: usize, run_id: &str) {
+async fn benchmark_distribution(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const TOTAL_KEYS: usize = 10_000;
 
     let (meta, bytes) = make_tensor(elements);
@@ -203,6 +204,170 @@ async fn benchmark_distribution(client: &DistributedClient, elements: usize, run
         if deviation > 15.0 {
             println!("Warning: Node {} has {:.1}% deviation from expected distribution", i, deviation);
         }
+    }
+}
+
+async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, run_id: &str) {
+    const NUM_OPS: usize = 5_000;
+
+    for i in 0..NUM_OPS {
+        let key = format!("seq_{}_{}", run_id, i);
+        let _ = client.get(&key).await;
+    }
+
+    let start = Instant::now();
+
+    for i in 0..NUM_OPS {
+        let key = format!("seq_{}_{}", run_id, i);
+        let _ = client.get(&key).await;
+    }
+
+    let elapsed = start.elapsed();
+    let ops_per_sec = NUM_OPS as f64 / elapsed.as_secs_f64();
+
+    println!("\nSequential throughput:");
+    println!("  Ops: {}", NUM_OPS);
+    println!("  Duration: {:?}", elapsed);
+    println!("  Throughput: {:.0} ops/sec", ops_per_sec);
+}
+
+async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize) {
+    const TOTAL_OPS: usize = 1_0000;
+
+    let (meta, bytes) = make_tensor(elements);
+    for i in 0..TOTAL_OPS {
+        let key = format!("throughput_key_{}", i);
+        client.put(key, meta.clone(), bytes.clone()).await.unwrap();
+    }
+
+    let start = Instant::now();
+
+    let futures: Vec<_> = (0..TOTAL_OPS)
+        .map(|i| {
+            let client = Arc::clone(&client);
+            let key = format!("throughput_key_{}", i);
+            async move {
+                let _ = client.get(&key).await;
+            }
+        })
+        .collect();
+
+    futures::future::join_all(futures).await;
+
+    let elapsed = start.elapsed();
+    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
+
+    println!(
+        "Throughput [{} elements]: {:.0} ops/sec ({} ops in {:?})",
+        elements,
+        ops_per_sec,
+        TOTAL_OPS,
+        elapsed
+    );
+}
+
+async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_id: &str) {
+    const BATCH_SIZE: usize = 100;
+    const NUM_BATCHES: usize = 100;
+
+    let start = Instant::now();
+
+    for batch in 0..NUM_BATCHES {
+        let futures: Vec<_> = (0..BATCH_SIZE)
+            .map(|i| {
+                let key = format!("batch_{}_{}_{}", run_id, batch, i);
+
+                async move {
+                    let _ = client.get(&key).await;
+                }
+            })
+            .collect();
+
+        futures::future::join_all(futures).await;
+    }
+
+    let elapsed = start.elapsed();
+    let total_ops = BATCH_SIZE * NUM_BATCHES;
+
+    let ops_per_sec = total_ops as f64 / elapsed.as_secs_f64();
+
+    println!("\nBatched throughput:");
+    println!("  Batch size: {}", BATCH_SIZE);
+    println!("  Batches: {}", NUM_BATCHES);
+    println!("  Total ops: {}", total_ops);
+    println!("  Throughput: {:.0} ops/sec", ops_per_sec);
+}
+
+async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, elements: usize) {
+    const TOTAL_OPS: usize = 5_000;
+    const WRITE_RATIO: f64 = 0.2;
+
+    let (meta, bytes) = make_tensor(elements);
+
+    let start = Instant::now();
+
+    let futures: Vec<_> = (0..TOTAL_OPS)
+        .map(|i| {
+            let key = format!("mixed_{}_{}", run_id, i);
+
+            let meta = meta.clone();
+            let bytes = bytes.clone();
+
+            async move {
+                let is_write = (i as f64 / TOTAL_OPS as f64) < WRITE_RATIO;
+
+                if is_write {
+                    let _ = client.put(key, meta, bytes).await;
+                } else {
+                    let _ = client.get(&key).await;
+                }
+            }
+        })
+        .collect();
+
+    futures::future::join_all(futures).await;
+
+    let elapsed = start.elapsed();
+    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
+
+    println!("\nMixed workload:");
+    println!("  Total ops: {}", TOTAL_OPS);
+    println!("  Writes: {}", (TOTAL_OPS as f64 * WRITE_RATIO) as usize);
+    println!("  Reads: {}", (TOTAL_OPS as f64 * (1.0 - WRITE_RATIO)) as usize);
+    println!("  Throughput: {:.0} ops/sec", ops_per_sec);
+}
+
+async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: &str) {
+    const DURATION_SECS: u64 = 10;
+    const OPS_PER_INTERVAL: usize = 2000;
+
+    println!("\nSustained throughput ({} seconds)", DURATION_SECS);
+
+    let start = Instant::now();
+    let mut interval = 0;
+
+    while start.elapsed() < Duration::from_secs(DURATION_SECS) {
+
+        let interval_start = Instant::now();
+
+        let futures: Vec<_> = (0..OPS_PER_INTERVAL)
+            .map(|i| {
+                let key = format!("sustained_{}_{}_{}", run_id, interval, i);
+
+                async move {
+                    let _ = client.get(&key).await;
+                }
+            })
+            .collect();
+
+        futures::future::join_all(futures).await;
+
+        let elapsed = interval_start.elapsed();
+        let throughput = OPS_PER_INTERVAL as f64 / elapsed.as_secs_f64();
+
+        println!("  Interval {} → {:.0} ops/sec", interval, throughput);
+
+        interval += 1;
     }
 }
 
@@ -249,37 +414,44 @@ async fn main() {
 
     for (label, elements) in sizes {
 
-        println!("Benchmarking for {}",label);
+        println!("Benchmarking operational latencies for {}",label);
 
         println!("\nStarting cluster on ports {}-{}...", port_seed, port_seed + 2);
         let nodes = spawn_cluster(port_seed).await;
 
-        let client = DistributedClient::new_default(nodes);
+        let client = Arc::new(DistributedClient::new_default(nodes));
 
-        let run_id = format!("{}_port{}", label, port_seed);
+        // let run_id = format!("{}_port{}", label, port_seed);
 
-        println!("\nPUT benchmarks");
-        benchmark_put_latency(&client, elements, &run_id).await;
-
-        println!("\nPUT throughput");
-        benchmark_put_throughput(&client, elements, &run_id).await;
-
-        println!("\nGET benchmarks");
-        benchmark_get_hit_latency(&client, elements, &run_id).await;
-
-        println!("\nGET miss benchmarks");
-        benchmark_get_miss_latency(&client, &run_id).await;
-
-        println!("\nGET miss Throughput benchmarks");
-        benchmark_get_miss_throughput(&client, &run_id).await;
-
-        println!("\nKey distribution benchmarks");
-        benchmark_distribution(&client, elements, &run_id).await;
-
-        println!("\nCompleted benchmark for {}", label);
+        // println!("\nPUT benchmarks");
+        // benchmark_put_latency(client.clone(), elements, &run_id).await;
+        //
+        // println!("\nPUT throughput");
+        // benchmark_put_throughput(client.clone(), elements, &run_id).await;
+        //
+        // println!("\nGET benchmarks");
+        // benchmark_get_hit_latency(client.clone(), elements, &run_id).await;
+        //
+        // println!("\nGET miss benchmarks");
+        // benchmark_get_miss_latency(client.clone(), &run_id).await;
+        //
+        // println!("\nGET miss Throughput benchmarks");
+        // benchmark_get_miss_throughput(client.clone(), &run_id).await;
+        //
+        // println!("\nKey distribution benchmarks");
+        // benchmark_distribution(client.clone(), elements, &run_id).await;
+        //
+        // println!("\nCompleted latency benchmarks for {}", label);
         port_seed += 10;
 
         sleep(Duration::from_secs(1)).await;
+
+        println!("Benchmarking throughput for {}",label);
+
+        println!("Benchmarking concurrent reads");
+        benchmark_parallel_gets_throughput(client.clone(), elements).await
+
+
     }
 
 }

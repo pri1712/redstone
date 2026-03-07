@@ -1037,7 +1037,6 @@ dependencies = [
 name = "redstone"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "criterion",
  "futures",
  "parking_lot",

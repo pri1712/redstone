@@ -6,9 +6,10 @@ use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
 
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
+use rand::RngExt;
 
 // 10GB
-const CACHE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
+const CACHE_SIZE: u64 = 20 * 1024 * 1024 * 1024;
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {
     let ports = [base_port, base_port + 1, base_port + 2];
@@ -133,42 +134,6 @@ async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str
     print_latency_stats("GET MISS", samples);
 }
 
-async fn benchmark_get_miss_throughput(client: Arc<DistributedClient>, run_id: &str) {
-    const TOTAL_OPS: usize = 10_000;
-    let start = Instant::now();
-
-    for i in 0..TOTAL_OPS {
-        let key = format!("throughput_get_miss_key_{}_{}", run_id, i);
-        let _ = client.get(&key).await;
-    }
-
-    let elapsed = start.elapsed();
-
-    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
-
-    println!(
-        "Throughput: {:.0} ops/sec ({} ops in {:?})",
-        ops_per_sec, TOTAL_OPS, elapsed
-    );
-}
-
-async fn benchmark_put_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
-    const TOTAL_OPS: usize = 10_000;
-    let start = Instant::now();
-
-    let (meta, bytes) = make_tensor(elements);
-
-    for i in 0..TOTAL_OPS {
-        let key = format!("throughput_put_key_{}_{}", run_id, i);
-        let _ = client.put(key,meta.clone(), bytes.clone()).await;
-    }
-    let elapsed = start.elapsed();
-    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
-    println!(
-        "Throughput: {:.0} ops/sec ({} ops in {:?})",
-        ops_per_sec, TOTAL_OPS, elapsed
-    );
-}
 
 async fn benchmark_distribution(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const TOTAL_KEYS: usize = 10_000;
@@ -305,19 +270,26 @@ async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, 
 
     let (meta, bytes) = make_tensor(elements);
 
+    for i in 0..TOTAL_OPS {
+        let key = format!("mixed_{}_{}", run_id, i);
+        let _ = client.put(key, meta.clone(), bytes.clone()).await;
+    }
+
     let start = Instant::now();
 
+    let mut rng = rand::rng();
+
     let futures: Vec<_> = (0..TOTAL_OPS)
-        .map(|i| {
+        .map(|_| {
             let client = Arc::clone(&client);
-            let key = format!("mixed_{}_{}", run_id, i);
+            let is_write = rng.random_bool(WRITE_RATIO);
+            let key_idx = rng.random_range(0..TOTAL_OPS);
+            let key = format!("mixed_{}_{}", run_id, key_idx);
 
             let meta = meta.clone();
             let bytes = bytes.clone();
 
             async move {
-                let is_write = (i as f64 / TOTAL_OPS as f64) < WRITE_RATIO;
-
                 if is_write {
                     let _ = client.put(key, meta, bytes).await;
                 } else {
@@ -332,11 +304,13 @@ async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, 
     let elapsed = start.elapsed();
     let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
 
-    println!("\nMixed workload:");
-    println!("  Total ops: {}", TOTAL_OPS);
-    println!("  Writes: {}", (TOTAL_OPS as f64 * WRITE_RATIO) as usize);
-    println!("  Reads: {}", (TOTAL_OPS as f64 * (1.0 - WRITE_RATIO)) as usize);
-    println!("  Throughput: {:.0} ops/sec", ops_per_sec);
+    println!(
+        "Mixed workload [{} elements]: {:.0} ops/sec ({} ops in {:?})",
+        elements,
+        ops_per_sec,
+        TOTAL_OPS,
+        elapsed
+    );
 }
 
 async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: &str) {

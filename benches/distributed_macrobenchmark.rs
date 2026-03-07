@@ -164,9 +164,9 @@ async fn benchmark_put_throughput(client: &DistributedClient, elements: usize, r
     let elapsed = start.elapsed();
     let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
     println!(
-        Throughput: {:.0} ops/sec ({} ops in {:?})",\
-        ops_per_sec, TOTAL_OPS, elapsed"
-    )
+        "Throughput: {:.0} ops/sec ({} ops in {:?})",
+        ops_per_sec, TOTAL_OPS, elapsed
+    );
 }
 
 async fn benchmark_distribution(client: &DistributedClient, elements: usize, run_id: &str) {
@@ -261,14 +261,17 @@ async fn main() {
         println!("\nPUT benchmarks");
         benchmark_put_latency(&client, elements, &run_id).await;
 
+        println!("\nPUT throughput");
+        benchmark_put_throughput(&client, elements, &run_id).await;
+
         println!("\nGET benchmarks");
         benchmark_get_hit_latency(&client, elements, &run_id).await;
 
         println!("\nGET miss benchmarks");
         benchmark_get_miss_latency(&client, &run_id).await;
 
-        println!("\nThroughput benchmarks");
-        benchmark_throughput(&client, &run_id).await;
+        println!("\nGET miss Throughput benchmarks");
+        benchmark_get_miss_throughput(&client, &run_id).await;
 
         println!("\nKey distribution benchmarks");
         benchmark_distribution(&client, elements, &run_id).await;

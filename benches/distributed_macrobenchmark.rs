@@ -231,12 +231,12 @@ async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, ru
     println!("  Throughput: {:.0} ops/sec", ops_per_sec);
 }
 
-async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize) {
+async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
     const TOTAL_OPS: usize = 1_0000;
 
     let (meta, bytes) = make_tensor(elements);
     for i in 0..TOTAL_OPS {
-        let key = format!("throughput_key_{}", i);
+        let key = format!("concurrent_{}_{}", i,run_id);
         client.put(key, meta.clone(), bytes.clone()).await.unwrap();
     }
 
@@ -245,7 +245,7 @@ async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elem
     let futures: Vec<_> = (0..TOTAL_OPS)
         .map(|i| {
             let client = Arc::clone(&client);
-            let key = format!("throughput_key_{}", i);
+            let key = format!("concurrent_{}_{}", i,run_id);
             async move {
                 let _ = client.get(&key).await;
             }
@@ -273,8 +273,10 @@ async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_i
     let start = Instant::now();
 
     for batch in 0..NUM_BATCHES {
+
         let futures: Vec<_> = (0..BATCH_SIZE)
             .map(|i| {
+                let client = Arc::clone(&client);
                 let key = format!("batch_{}_{}_{}", run_id, batch, i);
 
                 async move {
@@ -288,7 +290,6 @@ async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_i
 
     let elapsed = start.elapsed();
     let total_ops = BATCH_SIZE * NUM_BATCHES;
-
     let ops_per_sec = total_ops as f64 / elapsed.as_secs_f64();
 
     println!("\nBatched throughput:");
@@ -308,6 +309,7 @@ async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, 
 
     let futures: Vec<_> = (0..TOTAL_OPS)
         .map(|i| {
+            let client = Arc::clone(&client);
             let key = format!("mixed_{}_{}", run_id, i);
 
             let meta = meta.clone();
@@ -352,6 +354,7 @@ async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: 
 
         let futures: Vec<_> = (0..OPS_PER_INTERVAL)
             .map(|i| {
+                let client = Arc::clone(&client);
                 let key = format!("sustained_{}_{}_{}", run_id, interval, i);
 
                 async move {
@@ -421,7 +424,7 @@ async fn main() {
 
         let client = Arc::new(DistributedClient::new_default(nodes));
 
-        // let run_id = format!("{}_port{}", label, port_seed);
+        let run_id = format!("{}_port{}", label, port_seed);
 
         // println!("\nPUT benchmarks");
         // benchmark_put_latency(client.clone(), elements, &run_id).await;
@@ -448,8 +451,22 @@ async fn main() {
 
         println!("Benchmarking throughput for {}",label);
 
+        print!("Benchmarking sequential gets");
+        benchmark_sequential_gets_throughput(client.clone(), &run_id).await;
+
         println!("Benchmarking concurrent reads");
-        benchmark_parallel_gets_throughput(client.clone(), elements).await
+        benchmark_parallel_gets_throughput(client.clone(), elements, &run_id).await;
+
+        print!("Benchmarking batched reads");
+        benchmark_batched_gets_throughput(client.clone(), &run_id).await;
+
+        print!("Benchmarking mixed workload");
+        benchmark_mixed_workload(client.clone(), &run_id, elements).await;
+
+        print!("Benchmarking sustained throughput");
+        benchmark_sustained_throughput(client.clone(), &run_id).await;
+
+
 
 
     }

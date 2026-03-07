@@ -6,6 +6,7 @@ use crate::cluster::node::Node;
 
 pub struct HashRing {
     //for ordered access of node hashes
+    // node hash -> node.
     ring: BTreeMap<u64, Arc<Node>>,
     virtual_node_count: u32,
     //for now its fixed to be xxhash, can introduce configurability later.

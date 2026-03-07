@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 // 10GB
-const CACHE_SIZE: u64 = 1024 * 1024 * 1024 * 1024;
+const CACHE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {
     let ports = [base_port, base_port + 1, base_port + 2];
@@ -25,7 +25,8 @@ async fn spawn_cluster(base_port: u16) -> Vec<Node> {
         });
         nodes.push(Node::new(addr, format!("node-{}", port)));
     }
-    sleep(Duration::from_millis(800)).await;
+
+    sleep(Duration::from_secs(2)).await;
     nodes
 }
 
@@ -42,7 +43,7 @@ fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     let bytes: Vec<u8> = unsafe {
         std::slice::from_raw_parts(
             data.as_ptr() as *const u8,
-            data.len() * size_of::<f32>(),
+            data.len() * std::mem::size_of::<f32>(),
         )
             .to_vec()
     };
@@ -50,7 +51,7 @@ fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     (meta, bytes)
 }
 
-async fn benchmark_put_latency(client: &DistributedClient, elements: usize) {
+async fn benchmark_put_latency(client: &DistributedClient, elements: usize, run_id: &str) {
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -59,12 +60,12 @@ async fn benchmark_put_latency(client: &DistributedClient, elements: usize) {
     let mut samples = Vec::with_capacity(SAMPLES);
 
     for i in 0..WARMUP {
-        let key = format!("warmup_put_{}", i);
+        let key = format!("warmup_put_{}_{}", run_id, i);
         let _ = client.put(key, meta.clone(), bytes.clone()).await;
     }
 
     for i in 0..SAMPLES {
-        let key = format!("bench_put_{}", i);
+        let key = format!("bench_put_{}_{}", run_id, i);
 
         let start = Instant::now();
 
@@ -76,30 +77,34 @@ async fn benchmark_put_latency(client: &DistributedClient, elements: usize) {
     print_latency_stats("PUT", samples);
 }
 
-async fn benchmark_get_hit_latency(client: &DistributedClient, elements: usize) {
+async fn benchmark_get_hit_latency(client: &DistributedClient, elements: usize, run_id: &str) {
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
     let (meta, bytes) = make_tensor(elements);
 
-    for i in 0..SAMPLES {
-        let key = format!("hit_key_{}", i);
+    for i in 0..SAMPLES + WARMUP {
+        let key = format!("hit_key_{}_{}", run_id, i);
         client.put(key, meta.clone(), bytes.clone()).await.unwrap();
     }
+
+    sleep(Duration::from_millis(100)).await;
 
     let mut samples = Vec::with_capacity(SAMPLES);
 
     for i in 0..WARMUP {
-        let key = format!("hit_key_{}", i);
+        let key = format!("hit_key_{}_{}", run_id, i);
         let _ = client.get(&key).await;
     }
 
-    for i in 0..SAMPLES {
-        let key = format!("hit_key_{}", i);
+    for i in WARMUP..(WARMUP + SAMPLES) {
+        let key = format!("hit_key_{}_{}", run_id, i);
 
         let start = Instant::now();
 
-        let _ = client.get(&key).await.unwrap();
+        let result = client.get(&key).await.unwrap();
+
+        assert!(result.is_some(), "Expected cache hit, got miss for key {}", key);
 
         samples.push(start.elapsed());
     }
@@ -107,17 +112,19 @@ async fn benchmark_get_hit_latency(client: &DistributedClient, elements: usize) 
     print_latency_stats("GET HIT", samples);
 }
 
-async fn benchmark_get_miss_latency(client: &DistributedClient) {
+async fn benchmark_get_miss_latency(client: &DistributedClient, run_id: &str) {
     const SAMPLES: usize = 200;
 
     let mut samples = Vec::with_capacity(SAMPLES);
 
     for i in 0..SAMPLES {
-        let key = format!("missing_key_{}", i);
+        let key = format!("missing_key_{}_{}", run_id, i);
 
         let start = Instant::now();
 
-        let _ = client.get(&key).await.unwrap();
+        let result = client.get(&key).await.unwrap();
+
+        assert!(result.is_none(), "Expected cache miss, got hit for key {}", key);
 
         samples.push(start.elapsed());
     }
@@ -125,42 +132,77 @@ async fn benchmark_get_miss_latency(client: &DistributedClient) {
     print_latency_stats("GET MISS", samples);
 }
 
-async fn benchmark_throughput(client: &DistributedClient) {
-    let total_ops = 100_000;
-
+async fn benchmark_get_miss_throughput(client: &DistributedClient, run_id: &str) {
+    const TOTAL_OPS: usize = 10_000;
     let start = Instant::now();
 
-    for i in 0..total_ops {
-        let key = format!("throughput_key_{}", i);
+    for i in 0..TOTAL_OPS {
+        let key = format!("throughput_get_miss_key_{}_{}", run_id, i);
         let _ = client.get(&key).await;
     }
 
     let elapsed = start.elapsed();
 
-    let ops_per_sec = total_ops as f64 / elapsed.as_secs_f64();
+    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
 
     println!(
         "Throughput: {:.0} ops/sec ({} ops in {:?})",
-        ops_per_sec, total_ops, elapsed
+        ops_per_sec, TOTAL_OPS, elapsed
     );
 }
 
-async fn benchmark_distribution(client: &DistributedClient, elements: usize) {
-    let total_keys = 10_000;
+async fn benchmark_put_throughput(client: &DistributedClient, elements: usize, run_id: &str) {
+    const TOTAL_OPS: usize = 10_000;
+    let start = Instant::now();
 
-    for i in 0..total_keys {
-        let (meta, bytes) = make_tensor(elements);
-        let key = format!("dist_key_{}", i);
+    let (meta, bytes) = make_tensor(elements);
 
-        client.put(key, meta, bytes).await.unwrap();
+    for i in 0..TOTAL_OPS {
+        let key = format!("throughput_put_key_{}_{}", run_id, i);
+        let _ = client.put(key,meta.clone(), bytes.clone()).await;
     }
+    let elapsed = start.elapsed();
+    let ops_per_sec = TOTAL_OPS as f64 / elapsed.as_secs_f64();
+    println!(
+        Throughput: {:.0} ops/sec ({} ops in {:?})",\
+        ops_per_sec, TOTAL_OPS, elapsed"
+    )
+}
+
+async fn benchmark_distribution(client: &DistributedClient, elements: usize, run_id: &str) {
+    const TOTAL_KEYS: usize = 10_000;
+
+    let (meta, bytes) = make_tensor(elements);
+
+    for i in 0..TOTAL_KEYS {
+        let key = format!("dist_key_{}_{}", run_id, i);
+        client.put(key, meta.clone(), bytes.clone()).await.unwrap();
+    }
+
+    sleep(Duration::from_millis(200)).await;
 
     let stats = client.get_per_server_stats().await.unwrap();
 
-    println!("Distribution:");
+    println!("\nDistribution across {} nodes:", stats.len());
+
+    let total_entries: u64 = stats.iter().map(|s| s.entries).sum();
 
     for (i, stat) in stats.iter().enumerate() {
-        println!("Node {} entries: {}", i, stat.entries);
+        let percentage = (stat.entries as f64 / total_entries as f64) * 100.0;
+        println!(
+            "  Node {}: {} entries ({:.1}%)",
+            i,
+            stat.entries,
+            percentage
+        );
+    }
+
+    let expected_per_node = total_entries as f64 / stats.len() as f64;
+    for (i, stat) in stats.iter().enumerate() {
+        let deviation = ((stat.entries as f64 - expected_per_node) / expected_per_node * 100.0).abs();
+        if deviation > 15.0 {
+            println!("Warning: Node {} has {:.1}% deviation from expected distribution", i, deviation);
+        }
     }
 }
 
@@ -169,19 +211,34 @@ fn print_latency_stats(name: &str, mut samples: Vec<Duration>) {
 
     let n = samples.len();
 
+    if n == 0 {
+        println!("{} latency stats: No samples!", name);
+        return;
+    }
+
+    let min = samples[0];
+    let max = samples[n - 1];
     let p50 = samples[n / 2];
     let p95 = samples[(n as f64 * 0.95) as usize];
     let p99 = samples[(n as f64 * 0.99) as usize];
 
+    let sum: Duration = samples.iter().sum();
+    let mean = sum / n as u32;
+
     println!("\n{} latency stats:", name);
-    println!("samples: {}", n);
-    println!("p50: {:?}", p50);
-    println!("p95: {:?}", p95);
-    println!("p99: {:?}", p99);
+    println!("  Samples: {}", n);
+    println!("  Min:  {:?}", min);
+    println!("  Mean: {:?}", mean);
+    println!("  p50:  {:?}", p50);
+    println!("  p95:  {:?}", p95);
+    println!("  p99:  {:?}", p99);
+    println!("  Max:  {:?}", max);
 }
 
 #[tokio::main]
 async fn main() {
+    println!("Starting Distributed Tensor Cache Benchmarks\n");
+
     let sizes = vec![
         ("tiny_3KB", 768),
         ("small_50KB", 12_800),
@@ -191,35 +248,35 @@ async fn main() {
     let mut port_seed = 6100;
 
     for (label, elements) in sizes {
-        println!("\n==============================");
-        println!("Tensor size benchmark: {}", label);
-        println!("Elements: {}", elements);
-        println!("==============================");
 
+        println!("Benchmarking for {}",label);
+
+        println!("\nStarting cluster on ports {}-{}...", port_seed, port_seed + 2);
         let nodes = spawn_cluster(port_seed).await;
-        port_seed += 10;
 
         let client = DistributedClient::new_default(nodes);
 
-        println!("\n---- PUT latency ----");
-        benchmark_put_latency(&client, elements).await;
+        let run_id = format!("{}_port{}", label, port_seed);
 
-        println!("\n---- GET hit latency ----");
-        benchmark_get_hit_latency(&client, elements).await;
+        println!("\nPUT benchmarks");
+        benchmark_put_latency(&client, elements, &run_id).await;
 
-        println!("\n---- GET miss latency ----");
-        benchmark_get_miss_latency(&client).await;
+        println!("\nGET benchmarks");
+        benchmark_get_hit_latency(&client, elements, &run_id).await;
 
-        println!("\n---- Throughput ----");
-        benchmark_throughput(&client).await;
+        println!("\nGET miss benchmarks");
+        benchmark_get_miss_latency(&client, &run_id).await;
 
-        println!("\n---- Distribution ----");
-        benchmark_distribution(&client, elements).await;
+        println!("\nThroughput benchmarks");
+        benchmark_throughput(&client, &run_id).await;
 
-        println!("\nRun completed for {}", label);
+        println!("\nKey distribution benchmarks");
+        benchmark_distribution(&client, elements, &run_id).await;
+
+        println!("\nCompleted benchmark for {}", label);
+        port_seed += 10;
 
         sleep(Duration::from_secs(1)).await;
     }
 
-    println!("\nAll distributed benchmarks completed.");
 }

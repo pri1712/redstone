@@ -126,7 +126,7 @@ async fn benchmark_get_miss_latency(client: &DistributedClient) {
 }
 
 async fn benchmark_throughput(client: &DistributedClient) {
-    let total_ops = 50_000;
+    let total_ops = 100_000;
 
     let start = Instant::now();
 

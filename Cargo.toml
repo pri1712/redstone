@@ -7,13 +7,13 @@ edition = "2024"
 tonic = "0.14.0"
 prost = "0.14.0"
 tokio = { version = "1", features = ["full"] }
-bytes = "1.11.1"
 tonic-prost = "0.14.0"
 parking_lot = "0.12.0"
 twox-hash = "2.1.2"
 thiserror = "1.0"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+futures = "0.3.31"
 
 [dev-dependencies]
 rand = "0.10.0"
@@ -31,5 +31,14 @@ name = "redstone_client"
 path = "src/bin/demo_distributed_redstone_client.rs"
 
 [[bench]]
-name = "single_node_benchmark"
+name = "cache_microbenchmark"
 harness = false
+[[bench]]
+name = "distributed_macrobenchmark"
+harness = false
+
+[profile.release]
+debug = true
+
+[profile.bench]
+debug = true

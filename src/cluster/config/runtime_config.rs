@@ -17,7 +17,7 @@ impl ClusterClientConfig {
         Self {
             max_retries: 3,
             timeout: std::time::Duration::from_secs(5),
-            virtual_node_count: 50,
+            virtual_node_count: 150,
         }
     }
 }

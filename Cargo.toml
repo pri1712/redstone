@@ -30,11 +30,12 @@ path = "src/bin/redstone_server.rs"
 name = "redstone_client"
 path = "src/bin/demo_distributed_redstone_client.rs"
 
+[[bin]]
+name = "distributed_macrobenchmark"
+path = "src/bin/distributed_macrobenchmark.rs"
+
 [[bench]]
 name = "cache_microbenchmark"
-harness = false
-[[bench]]
-name = "distributed_macrobenchmark"
 harness = false
 
 [profile.release]

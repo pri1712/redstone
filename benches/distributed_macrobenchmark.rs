@@ -131,6 +131,7 @@ impl ThroughputStats {
 }
 
 async fn benchmark_put_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> LatencyStats {
+    /*benchmarking latencies needed for put operations in the cache, be careful to prevent evictions */
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -154,6 +155,7 @@ async fn benchmark_put_latency(client: Arc<DistributedClient>, elements: usize, 
 }
 
 async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> LatencyStats {
+    /*benchmarking get_hit operations*/
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -173,7 +175,7 @@ async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usi
 
     let mut samples = Vec::with_capacity(SAMPLES);
 
-    for i in WARMUP..(WARMUP + SAMPLES) {
+    for i in WARMUP+1..(WARMUP + SAMPLES) {
         let key = format!("hit_key_{}_{}", run_id, i);
         let start = Instant::now();
         let result = client.get(&key).await.unwrap();
@@ -185,6 +187,7 @@ async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usi
 }
 
 async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str) -> LatencyStats {
+    /*benchmarking get_miss operation latency*/
     const SAMPLES: usize = 200;
 
     let mut samples = Vec::with_capacity(SAMPLES);
@@ -200,8 +203,15 @@ async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str
     LatencyStats::from_samples(samples)
 }
 
-async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, run_id: &str) -> ThroughputStats {
+async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> ThroughputStats {
+    /*throughput that can be achieved by sequential get_hit operations*/
     const NUM_OPS: usize = 5_000;
+
+    let (meta, bytes) = make_tensor(elements);
+    for i in 0..NUM_OPS {
+        let key = format!("seq_{}_{}", run_id, i);
+        client.put(key, meta.clone(), bytes.clone()).await.unwrap();
+    }
 
     let start = Instant::now();
 
@@ -214,7 +224,8 @@ async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, ru
 }
 
 async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> ThroughputStats {
-    const TOTAL_OPS: usize = 10_000;
+    /*throughput that can be achieved by parallel get_hit operations*/
+    const TOTAL_OPS: usize = 10_00;
 
     let (meta, bytes) = make_tensor(elements);
     for i in 0..TOTAL_OPS {
@@ -239,9 +250,19 @@ async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elem
     ThroughputStats::new(TOTAL_OPS, start.elapsed())
 }
 
-async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_id: &str) -> ThroughputStats {
+async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_id: &str, elements: usize) -> ThroughputStats {
+    /*throughput that can be achieved by batched get_hit operations*/
     const BATCH_SIZE: usize = 100;
-    const NUM_BATCHES: usize = 100;
+    const NUM_BATCHES: usize = 10;
+
+    let (meta, bytes) = make_tensor(elements);
+
+    for batch in 0..NUM_BATCHES {
+        for i in 0..BATCH_SIZE {
+            let key = format!("batch_{}_{}_{}", run_id, batch, i);
+            client.put(key, meta.clone(), bytes.clone()).await.unwrap();
+        }
+    }
 
     let start = Instant::now();
 
@@ -250,6 +271,7 @@ async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_i
             .map(|i| {
                 let client = Arc::clone(&client);
                 let key = format!("batch_{}_{}_{}", run_id, batch, i);
+
                 async move {
                     let _ = client.get(&key).await;
                 }
@@ -263,34 +285,38 @@ async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_i
 }
 
 async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, elements: usize) -> ThroughputStats {
+    /*benchmarking mixed workload*/
     const TOTAL_OPS: usize = 5_000;
     const WRITE_RATIO: f64 = 0.2;
 
     let (meta, bytes) = make_tensor(elements);
 
     for i in 0..TOTAL_OPS {
-        let key = format!("mixed_{}_{}", run_id, i);
-        let _ = client.put(key, meta.clone(), bytes.clone()).await;
+        let key = format!("mixed_read_{}_{}", run_id, i);
+        client.put(key, meta.clone(), bytes.clone()).await.unwrap();
     }
 
     let mut rng = rand::rng();
-
     let start = Instant::now();
 
     let futures: Vec<_> = (0..TOTAL_OPS)
-        .map(|_| {
+        .map(|i| {
             let client = Arc::clone(&client);
-            let is_write = rng.random_bool(WRITE_RATIO);
-            let key_idx = rng.random_range(0..TOTAL_OPS);
-            let key = format!("mixed_{}_{}", run_id, key_idx);
             let meta = meta.clone();
             let bytes = bytes.clone();
 
+            let is_write = rng.random_bool(WRITE_RATIO);
+
+            let read_idx = rng.random_range(0..TOTAL_OPS);
+
+            let read_key = format!("mixed_read_{}_{}", run_id, read_idx);
+            let write_key = format!("mixed_write_{}_{}", run_id, i);
+
             async move {
                 if is_write {
-                    let _ = client.put(key, meta, bytes).await;
+                    let _ = client.put(write_key, meta, bytes).await;
                 } else {
-                    let _ = client.get(&key).await;
+                    let _ = client.get(&read_key).await;
                 }
             }
         })
@@ -333,7 +359,6 @@ async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: 
         interval += 1;
     }
 
-    // Summary statistics instead of printing every interval
     let avg = throughputs.iter().sum::<f64>() / throughputs.len() as f64;
     let min = throughputs.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = throughputs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -413,13 +438,13 @@ async fn main() {
         println!("{:-<30}-+-{:-<10}-+-{:-<12}-+-{:-<13}-+-{:-<10}",
                  "", "", "", "", "");
 
-        let seq_stats = benchmark_sequential_gets_throughput(client.clone(), &run_id).await;
+        let seq_stats = benchmark_sequential_gets_throughput(client.clone(), elements, &run_id).await;
         seq_stats.print("Sequential GET");
 
         let par_stats = benchmark_parallel_gets_throughput(client.clone(), elements, &run_id).await;
         par_stats.print("Parallel GET");
 
-        let batch_stats = benchmark_batched_gets_throughput(client.clone(), &run_id).await;
+        let batch_stats = benchmark_batched_gets_throughput(client.clone(), &run_id, elements).await;
         batch_stats.print("Batched GET");
 
         let mixed_stats = benchmark_mixed_workload(client.clone(), &run_id, elements).await;

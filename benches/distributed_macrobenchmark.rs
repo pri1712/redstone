@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use rand::RngExt;
 
+//20GB cache
 const CACHE_SIZE: u64 = 20 * 1024 * 1024 * 1024;
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {
@@ -225,7 +226,7 @@ async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, el
 
 async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> ThroughputStats {
     /*throughput that can be achieved by parallel get_hit operations*/
-    const TOTAL_OPS: usize = 10_00;
+    const TOTAL_OPS: usize = 5_000;
 
     let (meta, bytes) = make_tensor(elements);
     for i in 0..TOTAL_OPS {
@@ -327,11 +328,20 @@ async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, 
     ThroughputStats::new(TOTAL_OPS, start.elapsed())
 }
 
-async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: &str) {
+async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: &str, elements: usize) {
+    /*benchmarking sustained get_hit operations*/
     const DURATION_SECS: u64 = 10;
-    const OPS_PER_INTERVAL: usize = 2000;
+    const WORKING_SET: usize = 5_000;
+    const OPS_PER_INTERVAL: usize = 1_000;
 
     println!("\nSustained Throughput ({} seconds):", DURATION_SECS);
+
+    let (meta, bytes) = make_tensor(elements);
+
+    for i in 0..WORKING_SET {
+        let key = format!("sustained_{}_{}", run_id, i);
+        client.put(key, meta.clone(), bytes.clone()).await.unwrap();
+    }
 
     let start = Instant::now();
     let mut interval = 0;
@@ -343,7 +353,10 @@ async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: 
         let futures: Vec<_> = (0..OPS_PER_INTERVAL)
             .map(|i| {
                 let client = Arc::clone(&client);
-                let key = format!("sustained_{}_{}_{}", run_id, interval, i);
+
+                let key_idx = i % WORKING_SET;
+                let key = format!("sustained_{}_{}", run_id, key_idx);
+
                 async move {
                     let _ = client.get(&key).await;
                 }
@@ -354,8 +367,8 @@ async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: 
 
         let elapsed = interval_start.elapsed();
         let throughput = OPS_PER_INTERVAL as f64 / elapsed.as_secs_f64();
-        throughputs.push(throughput);
 
+        throughputs.push(throughput);
         interval += 1;
     }
 
@@ -376,7 +389,7 @@ async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: 
 }
 
 async fn benchmark_distribution(client: Arc<DistributedClient>, elements: usize, run_id: &str) {
-    const TOTAL_KEYS: usize = 10_000;
+    const TOTAL_KEYS: usize = 5_000;
 
     let (meta, bytes) = make_tensor(elements);
 
@@ -450,7 +463,7 @@ async fn main() {
         let mixed_stats = benchmark_mixed_workload(client.clone(), &run_id, elements).await;
         mixed_stats.print("Mixed (20% write)");
 
-        benchmark_sustained_throughput(client.clone(), &run_id).await;
+        benchmark_sustained_throughput(client.clone(), &run_id, elements).await;
 
         println!("\n--- KEY DISTRIBUTION ---");
         benchmark_distribution(client.clone(), elements, &run_id).await;

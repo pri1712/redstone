@@ -402,7 +402,8 @@ The above data **ignores** all network overhead, serialization and deserializati
 | Std Dev | 507 ps |
 | R² | 0.932 |
 
-
+https://docs.google.com/spreadsheets/d/1BdiEQra7bneoigugCkqQgkqMqycfD6QewtSLw30YVZQ/edit?usp=sharing
+For end to end benchmarks on the distributed architecture visit above link as of now.
 
 Run benchmarks yourself:
 

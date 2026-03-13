@@ -7,9 +7,64 @@ use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use rand::RngExt;
+use clap::{Parser, ValueEnum};
 
-//20GB cache
 const CACHE_SIZE: u64 = 20 * 1024 * 1024 * 1024;
+
+#[derive(Parser, Debug)]
+#[command(name = "Tensor Cache Benchmarks")]
+#[command(about = "Benchmark distributed tensor cache performance", long_about = None)]
+struct Args {
+    #[arg(short, long, value_enum, num_args = 1..)]
+    modes: Vec<BenchmarkMode>,
+
+    #[arg(short, long, value_enum, default_values_t = vec![TensorSize::Tiny, TensorSize::Small, TensorSize::Medium])]
+    sizes: Vec<TensorSize>,
+
+    #[arg(short, long, default_value_t = 6100)]
+    port: u16,
+
+    #[arg(short, long, default_value_t = false)]
+    latency: bool,
+
+    #[arg(short, long, default_value_t = false)]
+    distribution: bool,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum BenchmarkMode {
+    Sequential,
+    Parallel,
+    Batched,
+    Mixed,
+    Sustained,
+    All,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum TensorSize {
+    Tiny,
+    Small,
+    Medium,
+}
+
+impl TensorSize {
+    fn label(&self) -> &str {
+        match self {
+            TensorSize::Tiny => "tiny_3KB",
+            TensorSize::Small => "small_50KB",
+            TensorSize::Medium => "medium_1MB",
+        }
+    }
+
+    fn elements(&self) -> usize {
+        match self {
+            TensorSize::Tiny => 768,
+            TensorSize::Small => 12_800,
+            TensorSize::Medium => 262_144,
+        }
+    }
+}
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {
     let ports = [base_port, base_port + 1, base_port + 2];
@@ -132,7 +187,6 @@ impl ThroughputStats {
 }
 
 async fn benchmark_put_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> LatencyStats {
-    /*benchmarking latencies needed for put operations in the cache, be careful to prevent evictions */
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -156,7 +210,6 @@ async fn benchmark_put_latency(client: Arc<DistributedClient>, elements: usize, 
 }
 
 async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> LatencyStats {
-    /*benchmarking get_hit operations*/
     const SAMPLES: usize = 200;
     const WARMUP: usize = 50;
 
@@ -188,7 +241,6 @@ async fn benchmark_get_hit_latency(client: Arc<DistributedClient>, elements: usi
 }
 
 async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str) -> LatencyStats {
-    /*benchmarking get_miss operation latency*/
     const SAMPLES: usize = 200;
 
     let mut samples = Vec::with_capacity(SAMPLES);
@@ -205,7 +257,6 @@ async fn benchmark_get_miss_latency(client: Arc<DistributedClient>, run_id: &str
 }
 
 async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> ThroughputStats {
-    /*throughput that can be achieved by sequential get_hit operations*/
     const NUM_OPS: usize = 5_000;
 
     let (meta, bytes) = make_tensor(elements);
@@ -225,7 +276,6 @@ async fn benchmark_sequential_gets_throughput(client: Arc<DistributedClient>, el
 }
 
 async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elements: usize, run_id: &str) -> ThroughputStats {
-    /*throughput that can be achieved by parallel get_hit operations*/
     const TOTAL_OPS: usize = 5_000;
 
     let (meta, bytes) = make_tensor(elements);
@@ -252,7 +302,6 @@ async fn benchmark_parallel_gets_throughput(client: Arc<DistributedClient>, elem
 }
 
 async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_id: &str, elements: usize) -> ThroughputStats {
-    /*throughput that can be achieved by batched get_hit operations*/
     const BATCH_SIZE: usize = 100;
     const NUM_BATCHES: usize = 10;
 
@@ -286,7 +335,6 @@ async fn benchmark_batched_gets_throughput(client: Arc<DistributedClient>, run_i
 }
 
 async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, elements: usize) -> ThroughputStats {
-    /*benchmarking mixed workload*/
     const TOTAL_OPS: usize = 5_000;
     const WRITE_RATIO: f64 = 0.2;
 
@@ -329,7 +377,6 @@ async fn benchmark_mixed_workload(client: Arc<DistributedClient>, run_id: &str, 
 }
 
 async fn benchmark_sustained_throughput(client: Arc<DistributedClient>, run_id: &str, elements: usize) {
-    /*benchmarking sustained get_hit operations*/
     const DURATION_SECS: u64 = 10;
     const WORKING_SET: usize = 5_000;
     const OPS_PER_INTERVAL: usize = 1_000;
@@ -412,65 +459,86 @@ async fn benchmark_distribution(client: Arc<DistributedClient>, elements: usize,
 
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+
     println!("Distributed Tensor Cache Benchmarks");
+    println!("Modes: {:?}", args.modes);
+    println!("Sizes: {:?}", args.sizes);
+    println!();
 
-    let sizes = vec![
-        ("tiny_3KB", 768),
-        ("small_50KB", 12_800),
-        ("medium_1MB", 262_144),
-    ];
+    let mut port_seed = args.port;
 
-    let mut port_seed = 6100;
+    let run_all = args.modes.iter().any(|m| matches!(m, BenchmarkMode::All));
 
-    for (label, elements) in sizes {
-        print!("Benchmarking {}",label);
+    for size in &args.sizes {
+        let label = size.label();
+        let elements = size.elements();
 
-        println!("\nStarting cluster on ports {}-{}...", port_seed, port_seed + 2);
+        println!("Benchmarking {}", label);
+        println!("Starting cluster on ports {}-{}...", port_seed, port_seed + 2);
+
         let nodes = spawn_cluster(port_seed).await;
         let client = Arc::new(DistributedClient::new_default(nodes));
         let run_id = format!("{}_port{}", label, port_seed);
 
-        println!("\n--- LATENCY BENCHMARKS ---");
-        println!("{:<20} | {:>8} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
-                 "Operation", "Min", "Mean", "p50", "p95", "p99", "Max");
-        println!("{:-<20}-+-{:-<8}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}",
-                 "", "", "", "", "", "", "");
+        if args.latency {
+            println!("\n--- LATENCY BENCHMARKS ---");
+            println!("{:<20} | {:>8} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
+                     "Operation", "Min", "Mean", "p50", "p95", "p99", "Max");
+            println!("{:-<20}-+-{:-<8}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}-+-{:-<10}",
+                     "", "", "", "", "", "", "");
 
-        let put_stats = benchmark_put_latency(client.clone(), elements, &run_id).await;
-        put_stats.print("PUT");
+            let put_stats = benchmark_put_latency(client.clone(), elements, &run_id).await;
+            put_stats.print("PUT");
 
-        let get_hit_stats = benchmark_get_hit_latency(client.clone(), elements, &run_id).await;
-        get_hit_stats.print("GET HIT");
+            let get_hit_stats = benchmark_get_hit_latency(client.clone(), elements, &run_id).await;
+            get_hit_stats.print("GET HIT");
 
-        let get_miss_stats = benchmark_get_miss_latency(client.clone(), &run_id).await;
-        get_miss_stats.print("GET MISS");
+            let get_miss_stats = benchmark_get_miss_latency(client.clone(), &run_id).await;
+            get_miss_stats.print("GET MISS");
+        }
 
-        println!("\n--- THROUGHPUT BENCHMARKS ---");
-        println!("{:<30} | {:>10} | {:>12} | {:>13} | {:>10}",
-                 "Operation", "Total Ops", "Duration", "Throughput", "Avg Latency");
-        println!("{:-<30}-+-{:-<10}-+-{:-<12}-+-{:-<13}-+-{:-<10}",
-                 "", "", "", "", "");
+        if !args.modes.is_empty() {
+            println!("\n--- THROUGHPUT BENCHMARKS ---");
+            println!("{:<30} | {:>10} | {:>12} | {:>13} | {:>10}",
+                     "Operation", "Total Ops", "Duration", "Throughput", "Avg Latency");
+            println!("{:-<30}-+-{:-<10}-+-{:-<12}-+-{:-<13}-+-{:-<10}",
+                     "", "", "", "", "");
 
-        let seq_stats = benchmark_sequential_gets_throughput(client.clone(), elements, &run_id).await;
-        seq_stats.print("Sequential GET");
+            for mode in &args.modes {
+                match mode {
+                    BenchmarkMode::Sequential | BenchmarkMode::All if run_all || matches!(mode, BenchmarkMode::Sequential) => {
+                        let stats = benchmark_sequential_gets_throughput(client.clone(), elements, &run_id).await;
+                        stats.print("Sequential GET");
+                    }
+                    BenchmarkMode::Parallel | BenchmarkMode::All if run_all || matches!(mode, BenchmarkMode::Parallel) => {
+                        let stats = benchmark_parallel_gets_throughput(client.clone(), elements, &run_id).await;
+                        stats.print("Parallel GET");
+                    }
+                    BenchmarkMode::Batched | BenchmarkMode::All if run_all || matches!(mode, BenchmarkMode::Batched) => {
+                        let stats = benchmark_batched_gets_throughput(client.clone(), &run_id, elements).await;
+                        stats.print("Batched GET");
+                    }
+                    BenchmarkMode::Mixed | BenchmarkMode::All if run_all || matches!(mode, BenchmarkMode::Mixed) => {
+                        let stats = benchmark_mixed_workload(client.clone(), &run_id, elements).await;
+                        stats.print("Mixed (20% write)");
+                    }
+                    BenchmarkMode::Sustained | BenchmarkMode::All if run_all || matches!(mode, BenchmarkMode::Sustained) => {
+                        benchmark_sustained_throughput(client.clone(), &run_id, elements).await;
+                    }
+                    _ => {}
+                }
+            }
+        }
 
-        let par_stats = benchmark_parallel_gets_throughput(client.clone(), elements, &run_id).await;
-        par_stats.print("Parallel GET");
-
-        let batch_stats = benchmark_batched_gets_throughput(client.clone(), &run_id, elements).await;
-        batch_stats.print("Batched GET");
-
-        let mixed_stats = benchmark_mixed_workload(client.clone(), &run_id, elements).await;
-        mixed_stats.print("Mixed (20% write)");
-
-        benchmark_sustained_throughput(client.clone(), &run_id, elements).await;
-
-        println!("\n--- KEY DISTRIBUTION ---");
-        benchmark_distribution(client.clone(), elements, &run_id).await;
+        if args.distribution {
+            println!("\n--- KEY DISTRIBUTION ---");
+            benchmark_distribution(client.clone(), elements, &run_id).await;
+        }
 
         port_seed += 10;
         sleep(Duration::from_secs(1)).await;
     }
 
-    println!("All benchmarks completed");
+    println!("\nAll benchmarks completed");
 }

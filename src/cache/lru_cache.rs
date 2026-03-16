@@ -1,25 +1,26 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::ptr::NonNull;
-use std::sync::{Arc};
+use std::sync::Arc;
 use parking_lot::RwLock;
+use bytes::Bytes;
+
 pub(crate) use crate::cache::cache_stats::CacheStats;
 use crate::tensor::tensor::Tensor;
 use crate::error::cache_error::CacheError;
+
 static APPROX_LRU: f32 = 0.9;
+
 pub struct Cache {
     inner: RwLock<CacheInner>,
 }
 
-/// its safe to implement this since all interactions with Cache inner happen under RwLock.
+/// Its safe to implement this since all interactions with Cache inner happen under RwLock.
 /// Cache also derives the send and sync traits automatically since all its components have them.
 unsafe impl Send for CacheInner {}
 unsafe impl Sync for CacheInner {}
 
-
 /// Implementation of a cache for tensors. The key is a String and value is a complex tensor object.
 impl Cache {
-
     /// Constructor for the cache.
     pub fn new(max_size: u64) -> Result<Self, CacheError> {
         if max_size == 0 {
@@ -53,7 +54,7 @@ impl Cache {
         inner.get(key)
     }
 
-    /// Delete a key from the cache,it returns None in case no entry exists in the cache for the
+    /// Delete a key from the cache, it returns None in case no entry exists in the cache for the
     /// given key. Returns the deleted tensor in the other case.
     pub fn delete(&self, key: &str) -> Option<Arc<Tensor>> {
         let mut inner = self.inner.write();
@@ -84,7 +85,6 @@ impl Cache {
             evictions: inner.evictions,
         }
     }
-
 }
 
 struct LruNode {
@@ -92,6 +92,7 @@ struct LruNode {
     prev: Option<NonNull<LruNode>>,
     next: Option<NonNull<LruNode>>,
 }
+
 impl LruNode {
     /// Initialize the LruNode structure, each and every entry in the cache has an entry in this
     /// LRU structure. Each entry corresponds to a singular LruNode entry (based on the key).
@@ -103,61 +104,62 @@ impl LruNode {
         }
     }
 }
-struct CacheInner {
-    /// actual cache
-    map: HashMap<String, (Arc<Tensor>, NonNull<LruNode>,u64)>,
 
-    /// for least and most recently used
+struct CacheInner {
+    /// Actual cache
+    map: HashMap<String, (Arc<Tensor>, NonNull<LruNode>, u64)>,
+
+    /// For least and most recently used
     head: Option<NonNull<LruNode>>,
     tail: Option<NonNull<LruNode>>,
 
-    /// for eviction
+    /// For eviction
     current_cache_size_bytes: u64,
     max_cache_size_bytes: u64,
 
-    /// metrics
+    /// Metrics
     hits: u64,
     misses: u64,
     evictions: u64,
 }
 
 impl CacheInner {
-    ///Implements the actual put operation on the cache. Returns CacheError::KeyAlreadyExists in case
+    /// Implements the actual put operation on the cache. Returns CacheError::KeyAlreadyExists in case
     /// the key already exists in the cache. Returns Ok() otherwise.
     pub fn put(&mut self, key: String, tensor: Tensor) -> Result<(), CacheError> {
         if self.map.contains_key(&key) {
             return Err(CacheError::KeyAlreadyExists);
         }
-        //check if adding the tensor exceeds cache size, if it does ; keep dropping the LRU key
-        // till we are able to insert the new key at the head.
-        let tensor_size = tensor.byte_size() as u64;
-        while tensor_size + self.current_cache_size_bytes > self.max_cache_size_bytes && self.tail.is_some() {
-            //keep evicting LRU key.
-            self.evict_key();
 
+        let tensor_size = tensor.byte_size() as u64;
+
+        while tensor_size + self.current_cache_size_bytes > self.max_cache_size_bytes && self.tail.is_some() {
+            self.evict_key();
         }
 
         if self.current_cache_size_bytes + tensor_size > self.max_cache_size_bytes {
             return Err(CacheError::OutOfMemory);
         }
-        let node = Box::new(LruNode::new(key.clone()));
 
+        let node = Box::new(LruNode::new(key.clone()));
         let node_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(node)) };
+
         self.attach_node_to_head(node_ptr);
         self.map.insert(key, (Arc::new(tensor), node_ptr, tensor_size));
         self.current_cache_size_bytes += tensor_size;
+
         Ok(())
     }
 
-    ///Implements the get operation for the cache.
+    /// Implements the get operation for the cache.
     fn get(&mut self, key: &str) -> Option<Arc<Tensor>> {
         let entry = self.map.get(key);
-        //miss path
+
         if entry.is_none() {
             self.misses += 1;
             return None;
         }
-        //hit path
+
         let (tensor, node_ptr, _) = entry.unwrap();
         let tensor = Arc::clone(tensor);
         let node_ptr = *node_ptr;
@@ -170,57 +172,56 @@ impl CacheInner {
     }
 
     fn remove(&mut self, key: &str) -> Option<Arc<Tensor>> {
-        if let Some((tensor, _node_ptr, _node_size)) = self.map.remove(key) {
-            self.detach_node(_node_ptr);
-            unsafe { Box::from_raw(_node_ptr.as_ptr()) };
-            self.current_cache_size_bytes -= _node_size;
+        if let Some((tensor, node_ptr, node_size)) = self.map.remove(key) {
+            self.detach_node(node_ptr);
+            unsafe { Box::from_raw(node_ptr.as_ptr()) };
+            self.current_cache_size_bytes -= node_size;
             Some(tensor)
         } else {
             None
         }
     }
 
- /// evict least recently used key
+    /// Evict least recently used key
     pub fn evict_key(&mut self) {
         if let Some(tail_ptr) = self.tail {
             let tail = unsafe { tail_ptr.as_ref() };
             let key = tail.key.clone();
-            if let Some((_tensor,_node_ptr,_node_size)) = self.map.remove(&key) {
-                //reduce size of the cache and modify metrics
+
+            if let Some((_tensor, _node_ptr, node_size)) = self.map.remove(&key) {
                 self.evictions += 1;
-                self.current_cache_size_bytes -= _node_size;
+                self.current_cache_size_bytes -= node_size;
             }
+
             self.detach_node(tail_ptr);
-            //move tail memory to heap so its dropped at end of the method.
-            unsafe {Box::from_raw(tail_ptr.as_ptr())};
+            unsafe { Box::from_raw(tail_ptr.as_ptr()) };
         }
     }
 
     /// Detaches node described by the node_ptr pointer, based on its position in the linked list
     /// describing the cache.
-    fn detach_node(&mut self,node_ptr: NonNull<LruNode>) {
-        //3 cases, when node is head,middle node or tail.
+    fn detach_node(&mut self, node_ptr: NonNull<LruNode>) {
+        // 3 cases: when node is head, middle node or tail
         unsafe {
             let node = node_ptr.as_ref();
-            match (node.prev,node.next) {
-                (None,None) => {
-                    //when its the only node.
+            match (node.prev, node.next) {
+                (None, None) => {
+                    // When it's the only node
                     self.tail = None;
                     self.head = None;
                 }
-                (None,Some(next)) => {
-                    //head
+                (None, Some(next)) => {
+                    // Head
                     self.head = Some(next);
                     (*next.as_ptr()).prev = None;
                 }
-                (Some(prev),None) => {
-                    //tail
+                (Some(prev), None) => {
+                    // Tail
                     self.tail = Some(prev);
                     (*prev.as_ptr()).next = None;
-
                 }
-                (Some(prev),Some(next)) => {
-                    //middle node
+                (Some(prev), Some(next)) => {
+                    // Middle node
                     (*prev.as_ptr()).next = Some(next);
                     (*next.as_ptr()).prev = Some(prev);
                 }
@@ -229,7 +230,7 @@ impl CacheInner {
     }
 
     /// Attaches node given by node_ptr to the head
-    fn attach_node_to_head(&mut self,node_ptr: NonNull<LruNode>) {
+    fn attach_node_to_head(&mut self, node_ptr: NonNull<LruNode>) {
         unsafe {
             let node = &mut *node_ptr.as_ptr();
             node.prev = None;
@@ -242,7 +243,7 @@ impl CacheInner {
             self.head = Some(node_ptr);
 
             if self.tail.is_none() {
-                //if its the only node in the linked list.
+                // If it's the only node in the linked list
                 self.tail = Some(node_ptr);
             }
         }
@@ -267,7 +268,6 @@ impl Drop for CacheInner {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,7 +282,8 @@ mod tests {
         )
             .unwrap();
 
-        let data = vec![0u8; 64];
+        // Convert Vec to Bytes
+        let data = Bytes::from(vec![0u8; 64]);
         Tensor::new(meta, data).unwrap()
     }
 
@@ -324,31 +325,6 @@ mod tests {
         assert!(cache.get("missing").is_none());
     }
 
-    // #[test]
-    // fn test_concurrent_reads() {
-    //     let cache = Arc::new(Cache::new(64).unwrap());
-    //     let tensor = make_tensor();
-    //
-    //     cache
-    //         .put("shared_key".to_string(), tensor)
-    //         .unwrap();
-    //
-    //     let handles: Vec<_> = (0..10)
-    //         .map(|_| {
-    //             let cache_clone = Arc::clone(&cache);
-    //             thread::spawn(move || {
-    //                 for _ in 0..100 {
-    //                     assert!(cache_clone.get("shared_key").is_some());
-    //                 }
-    //             })
-    //         })
-    //         .collect();
-    //
-    //     for h in handles {
-    //         h.join().unwrap();
-    //     }
-    // }
-
     #[test]
     fn test_invalid_size() {
         assert!(matches!(Cache::new(0), Err(CacheError::InvalidSize)));
@@ -356,7 +332,6 @@ mod tests {
 
     #[test]
     fn test_out_of_memory_with_eviction() {
-
         let cache = Cache::new(100).unwrap();
         let tensor1 = make_tensor();
 
@@ -446,11 +421,29 @@ mod tests {
 
     #[test]
     fn test_single_large_tensor_oom() {
-        let cache = Cache::new(50).unwrap(); // Only 50 bytes
+        let cache = Cache::new(50).unwrap();
 
-        let tensor = make_tensor(); // 64 bytes - too big
+        let tensor = make_tensor();
 
         let result = cache.put("huge".to_string(), tensor);
         assert_eq!(result, Err(CacheError::OutOfMemory));
+    }
+
+    #[test]
+    fn test_bytes_sharing() {
+        let cache = Cache::new(200).unwrap();
+
+        let tensor = make_tensor();
+        cache.put("key1".to_string(), tensor).unwrap();
+
+        let t1 = cache.get("key1").unwrap();
+        let t2 = cache.get("key1").unwrap();
+
+        assert_eq!(t1.byte_size(), t2.byte_size());
+
+        let data1 = t1.get_data_cloned();
+        let data2 = t2.get_data_cloned();
+
+        assert_eq!(data1.len(), data2.len());
     }
 }

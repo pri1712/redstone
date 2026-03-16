@@ -55,7 +55,6 @@ mod tests {
             StorageLayout::RowMajor
         ).unwrap();
 
-        // Convert Vec to Bytes
         let data = Bytes::from(vec![0u8; 64]);
         let tensor = Tensor::new(meta, data);
         assert!(tensor.is_ok());

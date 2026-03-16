@@ -1,13 +1,14 @@
+use bytes::Bytes;
 use crate::tensor::meta::TensorMeta;
 
-//define the full tensor object to be stored
+/// Define the full tensor object to be stored
 pub struct Tensor {
     metadata: TensorMeta,
-    data: Vec<u8>
+    data: Bytes,
 }
 
 impl Tensor {
-    pub fn new(metadata: TensorMeta,data: Vec<u8>) -> Result<Self, &'static str> {
+    pub fn new(metadata: TensorMeta, data: Bytes) -> Result<Self, &'static str> {
         let data_len = data.len();
         let expected = metadata.total_byte_size()?;
         if data_len != expected {
@@ -15,10 +16,8 @@ impl Tensor {
         }
         Ok(Self { metadata, data })
     }
-    
-    /***
-    Returns size in bytes of the tensor object
-    */
+
+    /// Returns size in bytes of the tensor object
     pub fn byte_size(&self) -> usize {
         self.metadata.total_byte_size().unwrap()
     }
@@ -27,24 +26,37 @@ impl Tensor {
         &self.metadata
     }
 
-    pub fn get_data(&self) -> &[u8] {
+    /// Returns a reference to the underlying Bytes
+    pub fn get_data(&self) -> &Bytes {
         &self.data
+    }
+
+    /// Returns a clone of the Bytes (cheap - just increments refcount)
+    pub fn get_data_cloned(&self) -> Bytes {
+        self.data.clone()
+    }
+
+    /// Consumes the tensor and returns the Bytes
+    pub fn into_data(self) -> Bytes {
+        self.data
     }
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout};
+
     #[test]
     fn test_tensor_new_valid() {
         let meta = TensorMeta::new(
             DType::F32,
-            vec![4,4],
+            vec![4, 4],
             StorageLayout::RowMajor
         ).unwrap();
-        //the meta data is 64 bytes in size, this one should be too.
-        let data = vec![0u8; 64];
+
+        // Convert Vec to Bytes
+        let data = Bytes::from(vec![0u8; 64]);
         let tensor = Tensor::new(meta, data);
         assert!(tensor.is_ok());
     }
@@ -53,12 +65,45 @@ mod tests{
     fn test_tensor_new_invalid() {
         let meta = TensorMeta::new(
             DType::F32,
-            vec![4,4],
+            vec![4, 4],
             StorageLayout::RowMajor
         ).unwrap();
 
-        let data = vec![0u8; 63];
+        // Convert Vec to Bytes
+        let data = Bytes::from(vec![0u8; 63]);
         let tensor = Tensor::new(meta, data);
         assert!(tensor.is_err());
+    }
+
+    #[test]
+    fn test_tensor_data_clone_is_cheap() {
+        let meta = TensorMeta::new(
+            DType::F32,
+            vec![4, 4],
+            StorageLayout::RowMajor
+        ).unwrap();
+
+        let data = Bytes::from(vec![0u8; 64]);
+        let tensor = Tensor::new(meta, data).unwrap();
+
+        let data1 = tensor.get_data_cloned();
+        let data2 = tensor.get_data_cloned();
+
+        assert_eq!(data1.len(), data2.len());
+    }
+
+    #[test]
+    fn test_tensor_into_data() {
+        let meta = TensorMeta::new(
+            DType::F32,
+            vec![4, 4],
+            StorageLayout::RowMajor
+        ).unwrap();
+
+        let data = Bytes::from(vec![0u8; 64]);
+        let tensor = Tensor::new(meta, data).unwrap();
+
+        let data = tensor.into_data();
+        assert_eq!(data.len(), 64);
     }
 }

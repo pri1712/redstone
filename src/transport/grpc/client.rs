@@ -11,6 +11,8 @@ use crate::tensor::tensor::Tensor;
 
 #[derive(Clone)]
 pub struct RemoteCacheClient {
+    // each client-server connection has a separate channel. total number of channels are equal
+    // to the number of servers
     client: RedStoneClient<Channel>
 }
 

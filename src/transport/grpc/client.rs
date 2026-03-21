@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use bytes::Bytes;
 use tonic::Code;
 use tonic::transport::Channel;
 use crate::error::cache_error::CacheError;
@@ -39,7 +40,8 @@ impl RemoteCacheClient {
                     .meta
                     .ok_or_else(|| ClientError::ServerError("Missing metadata".into()))?;
                 let meta = proto_to_meta(&proto_meta)?;
-                let tensor = Tensor::new(meta, get_response.data)
+                let get_response_bytes = Bytes::from(get_response.data);
+                let tensor = Tensor::new(meta, get_response_bytes)
                     .map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?;
                 Ok(Some(Arc::new(tensor)))
             }
@@ -61,7 +63,7 @@ impl RemoteCacheClient {
         };
         let request = tonic::Request::new(PutRequest {
             //deep copy has cpu overhead
-            key: key.clone(),
+            key,
             meta: Some(proto_meta),
             //deep copy has cpu overhead
             data,

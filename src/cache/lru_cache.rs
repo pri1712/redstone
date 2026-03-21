@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt;
+use bytes::Bytes;
 use std::ptr::NonNull;
 use std::sync::{Arc};
 use parking_lot::RwLock;
@@ -283,7 +283,8 @@ mod tests {
             .unwrap();
 
         let data = vec![0u8; 64];
-        Tensor::new(meta, data).unwrap()
+        let data_bytes = bytes::Bytes::from(data);
+        Tensor::new(meta, data_bytes).unwrap()
     }
 
     #[test]

@@ -63,7 +63,7 @@ impl RemoteCacheClient {
         };
         let request = tonic::Request::new(PutRequest {
             //deep copy has cpu overhead
-            key: key.clone(),
+            key,
             meta: Some(proto_meta),
             //deep copy has cpu overhead
             data,

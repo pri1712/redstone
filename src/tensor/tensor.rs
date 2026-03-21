@@ -29,7 +29,7 @@ impl Tensor {
         &self.metadata
     }
 
-    pub fn get_data(&self) -> &[u8] {
+    pub fn get_data(&self) -> &Bytes {
         &self.data
     }
 }

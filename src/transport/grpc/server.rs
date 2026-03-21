@@ -84,7 +84,7 @@ impl RedStone for CacheServer {
             let meta = meta_to_proto(tensor.get_metadata());
             Ok(Response::new(GetResponse{
                 meta: Some(meta),
-                data: tensor.get_data().into(),
+                data: tensor.get_data().to_vec(),
             }))
         } else {
             Err(Status::not_found(format!("Key not found in cache: {}", get_request.key)))

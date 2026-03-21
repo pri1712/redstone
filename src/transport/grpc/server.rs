@@ -1,13 +1,18 @@
 use std::sync::Arc;
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::mpsc;
 use tonic::{transport::Server, Request, Response, Status, Code};
-use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse, StatsRequest, StatsResponse};
+use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponseChunk, PutRequest, PutResponse, StatsRequest, StatsResponse};
 use crate::proto::red_stone_server::{RedStone, RedStoneServer};
 use crate::proto;
 
 use crate::TensorCache;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::error::cache_error::CacheError;
+
+/// size of chunk that is sent at once for streaming grpcs.
+const CHUNK_SIZE: usize = 64 * 1024;
 
 pub struct CacheServer {
     cache: Arc<TensorCache>,
@@ -78,14 +83,37 @@ fn meta_to_proto(meta: &TensorMeta) -> proto::TensorMeta {
 #[tonic::async_trait]
 impl RedStone for CacheServer {
     /// Implementation for the GET method for the gRPC server.
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
+    type GetStream = ReceiverStream<Result<GetResponseChunk, Status>>;
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<Self::GetStream>, Status> {
         let get_request = request.into_inner();
         if let Some(tensor) = self.cache.get(&get_request.key) {
             let meta = meta_to_proto(tensor.get_metadata());
-            Ok(Response::new(GetResponse{
-                meta: Some(meta),
-                data: tensor.get_data().to_vec(),
-            }))
+            let data_bytes = tensor.get_data().clone();
+            let (tx, rx) = mpsc::channel(8);
+            tokio::spawn(async move {
+                let mut offset = 0;
+                let len = data_bytes.len();
+
+                while offset < len {
+                    let end = (offset + CHUNK_SIZE).min(len);
+                    let chunk = data_bytes.slice(offset..end);
+
+                    let msg = GetResponseChunk {
+                        meta: if offset == 0 {
+                            Some(meta.clone())
+                        } else {
+                            None
+                        },
+                        data: chunk.to_vec(),
+                        done: end == len,
+                    };
+                    if tx.send(Ok(msg)).await.is_err() {
+                        break;
+                    }
+                    offset = end;
+                }
+            });
+            Ok(Response::new(ReceiverStream::new(rx)))
         } else {
             Err(Status::not_found(format!("Key not found in cache: {}", get_request.key)))
         }
@@ -164,6 +192,7 @@ pub async fn start_server(addr: String, cache_size: u64) -> Result<(), Box<dyn s
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_stream::StreamExt;
 
     #[test]
     fn test_dtype_conversion() {
@@ -206,27 +235,38 @@ mod tests {
     async fn grpc_put_then_get_success() {
         let server = setup_server();
 
-        // PUT
         let put_req = PutRequest {
             key: "tensor1".to_string(),
             meta: Some(valid_proto_meta()),
             data: valid_tensor_bytes(),
         };
+        assert!(server.put(Request::new(put_req)).await.is_ok());
 
-        let put_response = server.put(Request::new(put_req)).await;
-        assert!(put_response.is_ok());
-
-        // GET
         let get_req = GetRequest {
             key: "tensor1".to_string(),
         };
 
-        let get_response = server.get(Request::new(get_req)).await;
-        assert!(get_response.is_ok());
+        let get_response = server.get(Request::new(get_req)).await.unwrap();
+        let mut stream = get_response.into_inner();
 
-        let resp = get_response.unwrap().into_inner();
-        assert_eq!(resp.data.len(), 16);
-        assert!(resp.meta.is_some());
+        let mut data = Vec::new();
+        let mut meta = None;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            if meta.is_none() {
+                meta = chunk.meta;
+            }
+
+            data.extend_from_slice(&chunk.data);
+
+            if chunk.done {
+                break;
+            }
+        }
+
+        assert_eq!(data.len(), 16);
+        assert!(meta.is_some());
     }
 
     #[tokio::test]

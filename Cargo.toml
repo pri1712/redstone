@@ -7,6 +7,7 @@ edition = "2024"
 tonic = "0.14.0"
 prost = "0.14.0"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1.10"
 tonic-prost = "0.14.0"
 parking_lot = "0.12.0"
 twox-hash = "2.1.2"
@@ -38,7 +39,7 @@ name = "distributed_macrobenchmark"
 path = "src/bin/distributed_macrobenchmark.rs"
 
 [[bench]]
-name = "cache_microbenchmark"
+name = "locking_microbenchmark"
 harness = false
 
 [profile.release]

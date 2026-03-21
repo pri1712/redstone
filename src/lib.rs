@@ -1,4 +1,6 @@
+use bytes::Bytes;
 use std::sync::Arc;
+
 pub mod tensor;
 pub mod cache;
 pub mod transport;
@@ -32,7 +34,8 @@ impl TensorCache {
     /// 2. Tensor validation before insertion, preventing corrupted writes
     /// 3. Atomic inserts
     pub fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>, ) -> Result<(), CacheError> {
-        let tensor = Tensor::new(meta, data)
+        let data_bytes = Bytes::from(data);
+        let tensor = Tensor::new(meta,data_bytes)
             .map_err(|_| CacheError::InvalidTensor)?;
         self.cache.put(key, tensor)
     }

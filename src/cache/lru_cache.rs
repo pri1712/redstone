@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt;
+use bytes::Bytes;
 use std::ptr::NonNull;
 use std::sync::{Arc};
 use parking_lot::RwLock;
@@ -270,6 +270,7 @@ impl Drop for CacheInner {
 
 #[cfg(test)]
 mod tests {
+    use std::str::Bytes;
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
     use crate::tensor::tensor::Tensor;
@@ -283,7 +284,8 @@ mod tests {
             .unwrap();
 
         let data = vec![0u8; 64];
-        Tensor::new(meta, data).unwrap()
+        let data_bytes = bytes::Bytes::from(data);
+        Tensor::new(meta, data_bytes).unwrap()
     }
 
     #[test]

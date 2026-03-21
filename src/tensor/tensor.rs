@@ -4,11 +4,12 @@ use crate::tensor::meta::TensorMeta;
 //define the full tensor object to be stored
 pub struct Tensor {
     metadata: TensorMeta,
+    //modified to Bytes for zero copy.
     data: Bytes
 }
 
 impl Tensor {
-    pub fn new(metadata: TensorMeta,data: Vec<u8>) -> Result<Self, &'static str> {
+    pub fn new(metadata: TensorMeta,data: Bytes) -> Result<Self, &'static str> {
         let data_len = data.len();
         let expected = metadata.total_byte_size()?;
         if data_len != expected {
@@ -44,9 +45,10 @@ mod tests{
             vec![4,4],
             StorageLayout::RowMajor
         ).unwrap();
-        //the meta data is 64 bytes in size, this one should be too.
+        //the meta-data is 64 bytes in size, this one should be too.
         let data = vec![0u8; 64];
-        let tensor = Tensor::new(meta, data);
+        let data_bytes = Bytes::from(data);
+        let tensor = Tensor::new(meta, data_bytes);
         assert!(tensor.is_ok());
     }
 
@@ -59,7 +61,8 @@ mod tests{
         ).unwrap();
 
         let data = vec![0u8; 63];
-        let tensor = Tensor::new(meta, data);
+        let data_bytes = Bytes::from(data);
+        let tensor = Tensor::new(meta, data_bytes);
         assert!(tensor.is_err());
     }
 }

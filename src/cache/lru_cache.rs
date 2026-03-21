@@ -270,7 +270,6 @@ impl Drop for CacheInner {
 
 #[cfg(test)]
 mod tests {
-    use std::str::Bytes;
     use super::*;
     use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
     use crate::tensor::tensor::Tensor;

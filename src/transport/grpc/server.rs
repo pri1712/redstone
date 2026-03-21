@@ -192,6 +192,7 @@ pub async fn start_server(addr: String, cache_size: u64) -> Result<(), Box<dyn s
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_stream::StreamExt;
 
     #[test]
     fn test_dtype_conversion() {
@@ -234,27 +235,38 @@ mod tests {
     async fn grpc_put_then_get_success() {
         let server = setup_server();
 
-        // PUT
         let put_req = PutRequest {
             key: "tensor1".to_string(),
             meta: Some(valid_proto_meta()),
             data: valid_tensor_bytes(),
         };
+        assert!(server.put(Request::new(put_req)).await.is_ok());
 
-        let put_response = server.put(Request::new(put_req)).await;
-        assert!(put_response.is_ok());
-
-        // GET
         let get_req = GetRequest {
             key: "tensor1".to_string(),
         };
 
-        let get_response = server.get(Request::new(get_req)).await;
-        assert!(get_response.is_ok());
+        let get_response = server.get(Request::new(get_req)).await.unwrap();
+        let mut stream = get_response.into_inner();
 
-        let resp = get_response.unwrap().into_inner();
-        assert_eq!(resp.data.len(), 16);
-        assert!(resp.meta.is_some());
+        let mut data = Vec::new();
+        let mut meta = None;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            if meta.is_none() {
+                meta = chunk.meta;
+            }
+
+            data.extend_from_slice(&chunk.data);
+
+            if chunk.done {
+                break;
+            }
+        }
+
+        assert_eq!(data.len(), 16);
+        assert!(meta.is_some());
     }
 
     #[tokio::test]

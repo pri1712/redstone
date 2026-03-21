@@ -2,7 +2,6 @@ use std::sync::Arc;
 use bytes::Bytes;
 use tonic::Code;
 use tonic::transport::Channel;
-use crate::error::cache_error::CacheError;
 use crate::error::client_error::ClientError;
 use crate::proto;
 use crate::proto::{GetRequest,PutRequest,DeleteRequest,StatsRequest};
@@ -77,12 +76,12 @@ impl RemoteCacheClient {
             shape: meta.shape().iter().map(|&s| s as u64).collect(),
             layout: layout_to_proto(meta.layout()),
         };
+        let bytes_data = Bytes::from(data);
         let request = tonic::Request::new(PutRequest {
             //deep copy has cpu overhead
             key,
             meta: Some(proto_meta),
-            //deep copy has cpu overhead
-            data,
+            data: bytes_data
         });
 
         self.client.put(request).await?;

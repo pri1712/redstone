@@ -12,7 +12,7 @@ use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::error::cache_error::CacheError;
 
 /// size of chunk that is sent at once for streaming grpcs.
-const CHUNK_SIZE: usize = 64 * 1024;
+const CHUNK_SIZE: usize = 256 * 1024;
 
 pub struct CacheServer {
     cache: Arc<TensorCache>,
@@ -104,7 +104,7 @@ impl RedStone for CacheServer {
                         } else {
                             None
                         },
-                        data: chunk.to_vec(),
+                        data: chunk,
                         done: end == len,
                     };
                     if tx.send(Ok(msg)).await.is_err() {
@@ -238,7 +238,7 @@ mod tests {
         let put_req = PutRequest {
             key: "tensor1".to_string(),
             meta: Some(valid_proto_meta()),
-            data: valid_tensor_bytes(),
+            data: Bytes::from(valid_tensor_bytes())
         };
         assert!(server.put(Request::new(put_req)).await.is_ok());
 
@@ -276,7 +276,7 @@ mod tests {
         let put_req = PutRequest {
             key: "dup".to_string(),
             meta: Some(valid_proto_meta()),
-            data: valid_tensor_bytes(),
+            data: Bytes::from(valid_tensor_bytes())
         };
 
         server.put(Request::new(put_req.clone())).await.unwrap();
@@ -314,7 +314,7 @@ mod tests {
         let put_req = PutRequest {
             key: "bad".to_string(),
             meta: Some(bad_meta),
-            data: valid_tensor_bytes(),
+            data: Bytes::from(valid_tensor_bytes()),
         };
 
         let response = server.put(Request::new(put_req)).await;

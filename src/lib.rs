@@ -33,7 +33,7 @@ impl TensorCache {
     /// 1. Immutable writes
     /// 2. Tensor validation before insertion, preventing corrupted writes
     /// 3. Atomic inserts
-    pub fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>, ) -> Result<(), CacheError> {
+    pub fn put(&self, key: String, meta: TensorMeta, data: Bytes, ) -> Result<(), CacheError> {
         let data_bytes = Bytes::from(data);
         let tensor = Tensor::new(meta,data_bytes)
             .map_err(|_| CacheError::InvalidTensor)?;
@@ -59,13 +59,21 @@ impl TensorCache {
     }
 
     /// Put method for f32 data type. It internally implements the core put method.
-    pub fn put_f32(&self, key: String, shape: Vec<usize>, data: Vec<f32>) -> Result<(), CacheError> {
-        let meta = TensorMeta::new(DType::F32, shape, StorageLayout::RowMajor, )
-            .map_err(|_| CacheError::InvalidTensorMetadata)?;
+    pub fn put_f32(&self, key: String, shape: Vec<usize>, mut data: Vec<f32>) -> Result<(), CacheError> {
+        let meta = TensorMeta::new(
+            DType::F32,
+            shape,
+            StorageLayout::RowMajor,
+        ).map_err(|_| CacheError::InvalidTensorMetadata)?;
 
-        let bytes: Vec<u8> = unsafe {
-            std::slice::from_raw_parts(data.as_ptr() as *const u8,
-                data.len() * size_of::<f32>()).to_vec()
+        let len = data.len() * size_of::<f32>();
+        let cap = data.capacity() * size_of::<f32>();
+        let ptr = data.as_mut_ptr() as *mut u8;
+
+        std::mem::forget(data);
+
+        let bytes = unsafe {
+            Bytes::from(Vec::from_raw_parts(ptr, len, cap))
         };
 
         self.put(key, meta, bytes)
@@ -92,8 +100,8 @@ mod tests {
 
         let meta = make_valid_meta();
         let data = vec![0u8; 16];
-
-        cache.put("t1".to_string(), meta, data).unwrap();
+        let data_bytes = Bytes::from(data);
+        cache.put("t1".to_string(), meta, data_bytes).unwrap();
 
         let tensor = cache.get("t1");
         assert!(tensor.is_some());
@@ -105,8 +113,8 @@ mod tests {
 
         let meta = make_valid_meta();
         let data = vec![0u8; 15]; // invalid size
-
-        let result = cache.put("bad".to_string(), meta, data);
+        let data_bytes = Bytes::from(data);
+        let result = cache.put("bad".to_string(), meta, data_bytes);
         assert_eq!(result, Err(CacheError::InvalidTensor));
     }
 
@@ -116,11 +124,13 @@ mod tests {
 
         let meta1 = make_valid_meta();
         let data1 = vec![0u8; 16];
-        cache.put("dup".to_string(), meta1, data1).unwrap();
+        let data1_bytes = Bytes::from(data1);
+        cache.put("dup".to_string(), meta1, data1_bytes).unwrap();
 
         let meta2 = make_valid_meta();
         let data2 = vec![0u8; 16];
-        let result = cache.put("dup".to_string(), meta2, data2);
+        let data2_bytes = Bytes::from(data2);
+        let result = cache.put("dup".to_string(), meta2, data2_bytes);
 
         assert_eq!(result, Err(CacheError::KeyAlreadyExists));
     }

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use bytes::Bytes;
 use tonic::{transport::Server, Request, Response, Status, Code};
 use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse, StatsRequest, StatsResponse};
 use crate::proto::red_stone_server::{RedStone, RedStoneServer};
@@ -83,7 +84,7 @@ impl RedStone for CacheServer {
             let meta = meta_to_proto(tensor.get_metadata());
             Ok(Response::new(GetResponse{
                 meta: Some(meta),
-                data: tensor.get_data().to_vec(),
+                data: tensor.get_data().into(),
             }))
         } else {
             Err(Status::not_found(format!("Key not found in cache: {}", get_request.key)))
@@ -96,7 +97,8 @@ impl RedStone for CacheServer {
             Status::invalid_argument("Missing tensor metadata")
         })?;
         let meta = proto_to_meta(&proto_meta)?;
-        match self.cache.put(put_request.key.clone(),meta,put_request.data) {
+        let put_request_data_bytes = Bytes::from(put_request.data);
+        match self.cache.put(put_request.key.clone(),meta,put_request_data_bytes) {
             Ok(()) => Ok(Response::new(PutResponse{})),
             Err(e) => {
                 match e {

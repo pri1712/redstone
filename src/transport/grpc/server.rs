@@ -1,5 +1,7 @@
 use std::sync::Arc;
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::mpsc;
 use tonic::{transport::Server, Request, Response, Status, Code};
 use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponseChunk, PutRequest, PutResponse, StatsRequest, StatsResponse};
 use crate::proto::red_stone_server::{RedStone, RedStoneServer};
@@ -8,6 +10,9 @@ use crate::proto;
 use crate::TensorCache;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::error::cache_error::CacheError;
+
+/// size of chunk that is sent at once for streaming grpcs.
+const CHUNK_SIZE: usize = 64 * 1024;
 
 pub struct CacheServer {
     cache: Arc<TensorCache>,
@@ -78,14 +83,37 @@ fn meta_to_proto(meta: &TensorMeta) -> proto::TensorMeta {
 #[tonic::async_trait]
 impl RedStone for CacheServer {
     /// Implementation for the GET method for the gRPC server.
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponseChunk>, Status> {
+    type GetStream = ReceiverStream<Result<GetResponseChunk, Status>>;
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<Self::GetStream>, Status> {
         let get_request = request.into_inner();
         if let Some(tensor) = self.cache.get(&get_request.key) {
             let meta = meta_to_proto(tensor.get_metadata());
-            Ok(Response::new(GetResponse{
-                meta: Some(meta),
-                data: tensor.get_data().to_vec(),
-            }))
+            let data_bytes = tensor.get_data().clone();
+            let (tx, rx) = mpsc::channel(8);
+            tokio::spawn(async move {
+                let mut offset = 0;
+                let len = data_bytes.len();
+
+                while offset < len {
+                    let end = (offset + CHUNK_SIZE).min(len);
+                    let chunk = data_bytes.slice(offset..end);
+
+                    let msg = GetResponseChunk {
+                        meta: if offset == 0 {
+                            Some(meta.clone())
+                        } else {
+                            None
+                        },
+                        data: chunk.to_vec(),
+                        done: end == len,
+                    };
+                    if tx.send(Ok(msg)).await.is_err() {
+                        break;
+                    }
+                    offset = end;
+                }
+            });
+            Ok(Response::new(ReceiverStream::new(rx)))
         } else {
             Err(Status::not_found(format!("Key not found in cache: {}", get_request.key)))
         }

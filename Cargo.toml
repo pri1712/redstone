@@ -38,7 +38,7 @@ name = "distributed_macrobenchmark"
 path = "src/bin/distributed_macrobenchmark.rs"
 
 [[bench]]
-name = "cache_microbenchmark"
+name = "locking_microbenchmark"
 harness = false
 
 [profile.release]

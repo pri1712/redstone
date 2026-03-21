@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use bytes::Bytes;
 use tonic::{transport::Server, Request, Response, Status, Code};
-use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponse, PutRequest, PutResponse, StatsRequest, StatsResponse};
+use crate::proto::{DeleteRequest, DeleteResponse, GetRequest, GetResponseChunk, PutRequest, PutResponse, StatsRequest, StatsResponse};
 use crate::proto::red_stone_server::{RedStone, RedStoneServer};
 use crate::proto;
 
@@ -78,7 +78,7 @@ fn meta_to_proto(meta: &TensorMeta) -> proto::TensorMeta {
 #[tonic::async_trait]
 impl RedStone for CacheServer {
     /// Implementation for the GET method for the gRPC server.
-    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
+    async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponseChunk>, Status> {
         let get_request = request.into_inner();
         if let Some(tensor) = self.cache.get(&get_request.key) {
             let meta = meta_to_proto(tensor.get_metadata());

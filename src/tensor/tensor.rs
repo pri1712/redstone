@@ -1,9 +1,10 @@
+use bytes::Bytes;
 use crate::tensor::meta::TensorMeta;
 
 //define the full tensor object to be stored
 pub struct Tensor {
     metadata: TensorMeta,
-    data: Vec<u8>
+    data: Bytes
 }
 
 impl Tensor {

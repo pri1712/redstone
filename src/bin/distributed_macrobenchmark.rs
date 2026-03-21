@@ -18,7 +18,12 @@ struct Args {
     #[arg(short, long, value_enum, num_args = 1..)]
     modes: Vec<BenchmarkMode>,
 
-    #[arg(short, long, value_enum, default_values_t = vec![TensorSize::Tiny, TensorSize::Small, TensorSize::Medium])]
+    #[arg(short, long, value_enum, default_values_t = vec![
+        TensorSize::Tensor_3KB,
+        TensorSize::Tensor_50KB,
+        TensorSize::Tensor_1MB,
+        TensorSize::Tensor_3MB
+    ])]
     sizes: Vec<TensorSize>,
 
     #[arg(short, long, default_value_t = 6100)]
@@ -43,25 +48,28 @@ enum BenchmarkMode {
 
 #[derive(Debug, Clone, ValueEnum)]
 enum TensorSize {
-    Tiny,
-    Small,
-    Medium,
+    Tensor_3KB,
+    Tensor_50KB,
+    Tensor_1MB,
+    Tensor_3MB,
 }
 
 impl TensorSize {
     fn label(&self) -> &str {
         match self {
-            TensorSize::Tiny => "tiny_3KB",
-            TensorSize::Small => "small_50KB",
-            TensorSize::Medium => "medium_1MB",
+            TensorSize::Tensor_3KB => "embedding_vector_3KB",
+            TensorSize::Tensor_50KB   => "attention_head_50KB",
+            TensorSize::Tensor_1MB    => "weight_matrix_1MB",
+            TensorSize::Tensor_3MB => "layer_activation_3MB",
         }
     }
 
     fn elements(&self) -> usize {
         match self {
-            TensorSize::Tiny => 768,
-            TensorSize::Small => 12_800,
-            TensorSize::Medium => 262_144,
+            TensorSize::Tensor_3KB => 768,
+            TensorSize::Tensor_50KB   => 12_800,
+            TensorSize::Tensor_1MB    => 262_144,
+            TensorSize::Tensor_3MB => 786_432,
         }
     }
 }

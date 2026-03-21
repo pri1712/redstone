@@ -2,7 +2,6 @@ use std::sync::Arc;
 use bytes::Bytes;
 use tonic::Code;
 use tonic::transport::Channel;
-use crate::error::cache_error::CacheError;
 use crate::error::client_error::ClientError;
 use crate::proto;
 use crate::proto::{GetRequest,PutRequest,DeleteRequest,StatsRequest};
@@ -29,29 +28,45 @@ impl RemoteCacheClient {
     }
 
     pub async fn get(&mut self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
-        let request = tonic::Request::new(GetRequest {
-            key,
-        });
+
+        let request = tonic::Request::new(GetRequest { key });
 
         match self.client.get(request).await {
             Ok(response) => {
-                let get_response = response.into_inner();
-                let proto_meta = get_response
-                    .meta
-                    .ok_or_else(|| ClientError::ServerError("Missing metadata".into()))?;
+                let mut stream = response.into_inner();
+                let mut meta = None;
+                let mut buffer = bytes::BytesMut::new();
+                while let Some(chunk) = stream
+                    .message()
+                    .await
+                    .map_err(ClientError::GrpcStatus)? {
+                    if meta.is_none() {
+                        meta = chunk.meta;
+                    }
+                    buffer.extend_from_slice(&chunk.data);
+                    if chunk.done {
+                        break;
+                    }
+                }
+
+                let proto_meta = meta.ok_or_else(|| ClientError::ServerError("Missing metadata".into()))?;
+
                 let meta = proto_to_meta(&proto_meta)?;
-                let get_response_bytes = Bytes::from(get_response.data);
-                let tensor = Tensor::new(meta, get_response_bytes)
-                    .map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?;
+
+                let tensor = Tensor::new(meta, buffer.freeze()).map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?;
+
                 Ok(Some(Arc::new(tensor)))
             }
-            Err(status) => {
-                match status.code() {
-                    Code::NotFound => Ok(None),
-                    Code::Internal => Err(ClientError::ServerError("Internal server error".to_string())),
-                    Code::Aborted => Err(ClientError::GrpcStatus(status)),
-                    _ => Err(ClientError::ServerError("Unknown error".to_string())),
-                }
+
+            Err(status) => match status.code() {
+                Code::NotFound => Ok(None),
+                Code::Internal => Err(ClientError::ServerError(
+                    "Internal server error".to_string()
+                )),
+                Code::Aborted => Err(ClientError::GrpcStatus(status)),
+                _ => Err(ClientError::ServerError(
+                    "Unknown error".to_string()
+                )),
             }
         }
     }
@@ -61,12 +76,12 @@ impl RemoteCacheClient {
             shape: meta.shape().iter().map(|&s| s as u64).collect(),
             layout: layout_to_proto(meta.layout()),
         };
+        let bytes_data = Bytes::from(data);
         let request = tonic::Request::new(PutRequest {
             //deep copy has cpu overhead
             key,
             meta: Some(proto_meta),
-            //deep copy has cpu overhead
-            data,
+            data: bytes_data
         });
 
         self.client.put(request).await?;

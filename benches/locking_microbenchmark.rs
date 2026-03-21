@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 use std::mem::size_of;
 
+/// benchmarks for estimating scalability of different locking mechanisms.
 fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
     let meta = TensorMeta::new(
         DType::F32,

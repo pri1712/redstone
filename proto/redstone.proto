@@ -3,7 +3,7 @@ syntax = "proto3";
 package redstone;
 
 service RedStone {
-  rpc Get(GetRequest) returns (GetResponse);
+  rpc Get(GetRequest) returns (stream GetResponseChunk);
 
   rpc Put(PutRequest) returns (PutResponse);
 
@@ -41,9 +41,10 @@ message GetRequest {
 }
 
 
-message GetResponse {
+message GetResponseChunk {
   TensorMeta meta = 1;
   bytes data = 2;
+  bool done = 3;
 }
 
 

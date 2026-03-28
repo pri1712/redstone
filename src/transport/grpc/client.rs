@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
 use tonic::Code;
 use tonic::transport::Channel;
@@ -13,9 +14,11 @@ use crate::tensor::tensor::Tensor;
 pub struct RemoteCacheClient {
     // each client-server connection has a separate channel. total number of channels are equal
     // to the number of servers
-    client: RedStoneClient<Channel>
+    clients: Arc<Vec<RedStoneClient<Channel>>>,
+    next: Arc<AtomicUsize>,
 }
 
+const POOL_SIZE: usize = 10;
 impl RemoteCacheClient {
     pub async fn connect(addr: String) -> Result<Self, ClientError> {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
@@ -23,15 +26,22 @@ impl RemoteCacheClient {
         } else {
             format!("http://{}", addr)
         };
-        let client = RedStoneClient::connect(url).await?;
-        Ok(Self { client })
+
+        let mut clients = Vec::with_capacity(POOL_SIZE);
+
+        for _ in 0..POOL_SIZE {
+            let client = RedStoneClient::connect(url.clone()).await?;
+            clients.push(client);
+        }
+
+        Ok(Self { clients: Arc::new(clients), next: Arc::new(AtomicUsize::new(0))})
     }
 
     pub async fn get(&mut self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
 
         let request = tonic::Request::new(GetRequest { key });
-
-        match self.client.get(request).await {
+        let mut client = self.client();
+        match client.get(request).await {
             Ok(response) => {
                 let mut stream = response.into_inner();
                 let mut meta = None;
@@ -83,8 +93,8 @@ impl RemoteCacheClient {
             meta: Some(proto_meta),
             data: bytes_data
         });
-
-        self.client.put(request).await?;
+        let mut client = self.client();
+        client.put(request).await?;
         Ok(())
     }
 
@@ -92,13 +102,15 @@ impl RemoteCacheClient {
         let request = tonic::Request::new(DeleteRequest {
             key,
         });
-        self.client.delete(request).await?;
+        let mut client = self.client();
+        client.delete(request).await?;
         Ok(())
     }
 
     pub async fn get_stats(&mut self) -> Result<CacheStats, ClientError> {
         let request = tonic::Request::new(StatsRequest {});
-        let response = self.client.get_stats(request).await?.into_inner();
+        let mut client = self.client();
+        let response = client.get_stats(request).await?.into_inner();
 
         Ok(CacheStats {
             entries: response.entries,
@@ -110,6 +122,11 @@ impl RemoteCacheClient {
             hit_rate: response.hit_rate,
             memory_utilization: response.memory_utilization,
         })
+    }
+
+    fn client(&self) -> RedStoneClient<Channel> {
+        let idx = self.next.fetch_add(1, Ordering::Relaxed);
+        self.clients[idx % self.clients.len()].clone()
     }
 
 }

@@ -182,6 +182,8 @@ pub async fn start_server(addr: String, cache_size: u64) -> Result<(), Box<dyn s
 
 
     Server::builder()
+        .initial_stream_window_size(64*1024*1024)
+        .initial_connection_window_size(64*1024*1024)
         .add_service(RedStoneServer::new(server))
         .serve(addr)
         .await?;

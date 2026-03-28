@@ -37,7 +37,7 @@ impl RemoteCacheClient {
         Ok(Self { clients: Arc::new(clients), next: Arc::new(AtomicUsize::new(0))})
     }
 
-    pub async fn get(&mut self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
+    pub async fn get(&self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
 
         let request = tonic::Request::new(GetRequest { key });
         let mut client = self.client();
@@ -81,7 +81,7 @@ impl RemoteCacheClient {
         }
     }
 
-    pub async fn put(&mut self, key: String, meta: TensorMeta, data: Vec<u8>) -> Result<(), ClientError> {
+    pub async fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>) -> Result<(), ClientError> {
         let proto_meta = proto::TensorMeta { dtype: dtype_to_proto(meta.dtype()),
             shape: meta.shape().iter().map(|&s| s as u64).collect(),
             layout: layout_to_proto(meta.layout()),
@@ -98,7 +98,7 @@ impl RemoteCacheClient {
         Ok(())
     }
 
-    pub async fn delete(&mut self, key: String) -> Result<(), ClientError> {
+    pub async fn delete(&self, key: String) -> Result<(), ClientError> {
         let request = tonic::Request::new(DeleteRequest {
             key,
         });
@@ -107,7 +107,7 @@ impl RemoteCacheClient {
         Ok(())
     }
 
-    pub async fn get_stats(&mut self) -> Result<CacheStats, ClientError> {
+    pub async fn get_stats(&self) -> Result<CacheStats, ClientError> {
         let request = tonic::Request::new(StatsRequest {});
         let mut client = self.client();
         let response = client.get_stats(request).await?.into_inner();

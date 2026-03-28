@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::mem::size_of;
+use bytes::Bytes;
 
 /// benchmarks for estimating scalability of different locking mechanisms.
 fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
@@ -24,7 +25,7 @@ fn make_tensor(elements: usize) -> (TensorMeta, Vec<u8>) {
 fn populate_cache(cache: &TensorCache, count: usize, size_per_entry: usize) {
     for i in 0..count {
         let (meta, bytes) = make_tensor(size_per_entry);
-        cache.put(format!("preload_{}", i), meta, bytes).unwrap();
+        cache.put(format!("preload_{}", i), meta, Bytes::from(bytes)).unwrap();
     }
 }
 
@@ -54,7 +55,7 @@ fn bench_put_sizes(c: &mut Criterion) {
                         (cache, meta, bytes)
                     },
                     |(cache, meta, bytes)| {
-                        cache.put("key".to_string(), meta, bytes).unwrap();
+                        cache.put("key".to_string(), meta, Bytes::from(bytes)).unwrap();
                     },
                     BatchSize::SmallInput,
                 );
@@ -77,7 +78,7 @@ fn bench_get_hit(c: &mut Criterion) {
             |b, &elements| {
                 let cache = TensorCache::new(1024 * 1024 * 1024).unwrap();
                 let (meta, bytes) = make_tensor(elements);
-                cache.put("test_key".to_string(), meta, bytes).unwrap();
+                cache.put("test_key".to_string(), meta, Bytes::from(bytes)).unwrap();
                 b.iter(|| {
                     black_box(cache.get("test_key"));
                 });
@@ -101,7 +102,7 @@ fn bench_eviction(c: &mut Criterion) {
             },
             |cache| {
                 let (meta, bytes) = make_tensor(500_000);
-                cache.put("evict_key".to_string(), meta, bytes).unwrap();
+                cache.put("evict_key".to_string(), meta, Bytes::from(bytes)).unwrap();
             },
             BatchSize::SmallInput,
         );

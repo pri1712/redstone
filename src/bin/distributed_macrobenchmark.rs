@@ -75,7 +75,7 @@ impl TensorSize {
 }
 
 async fn spawn_cluster(base_port: u16) -> Vec<Node> {
-    let ports = [base_port];
+    let ports = [base_port, base_port + 1, base_port + 2];
     let mut nodes = Vec::new();
 
     for port in ports {

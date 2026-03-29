@@ -1,8 +1,6 @@
-use std::arch::aarch64::uint64x1x2_t;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
-use clap::builder::Str;
 use tonic::Code;
 use tonic::transport::Channel;
 use crate::error::client_error::ClientError;
@@ -22,8 +20,8 @@ pub struct RemoteCacheClient {
 }
 
 const POOL_SIZE: usize = 10;
-//256 bytes l1 cache
-const L1_MAX_BYTES: u64 = 256 * 1024 * 1024;
+//256 KB l1 cache
+const L1_MAX_BYTES: u64 = 1024 * 1024;
 impl RemoteCacheClient {
     pub async fn connect(addr: String) -> Result<Self, ClientError> {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
@@ -44,7 +42,7 @@ impl RemoteCacheClient {
             next: Arc::new(AtomicUsize::new(0)),
             l1_cache: Cache::builder()
                 .weigher(|_k: &String, v: &Arc<Tensor>| -> u32 {
-                    v.byte_size() as u32
+                    v.byte_size().min(u32::MAX as usize) as u32
                 })
                 .max_capacity(L1_MAX_BYTES)
                 .build()

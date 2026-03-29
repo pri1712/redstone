@@ -16,12 +16,11 @@ A high-performance, distributed tensor cache built in Rust, optimized for ML inf
 - Multi-node cluster support
 
 **In Progress:**
-- Replication for fault tolerance
+- Client side caching
+- Improved metrics
 
 **Planned:**
-- Client-side caching
 - Compression
-- Production monitoring & metrics
 - Memory tiering
 - Zero copy serialization/deserialization
 

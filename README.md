@@ -8,7 +8,8 @@ A high-performance, distributed tensor cache built in Rust, optimized for ML inf
 
 **Complete:**
 - Single-node LRU cache with memory-based eviction
-- gRPC server and client
+- streaming gRPC
+- Connection pooling for improved parallelism
 - Network protocol (Protocol Buffers)
 - Basic put/get/delete/observability operations
 - Consistent hashing for sharding

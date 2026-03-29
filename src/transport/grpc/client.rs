@@ -1,6 +1,8 @@
+use std::arch::aarch64::uint64x1x2_t;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use bytes::Bytes;
+use clap::builder::Str;
 use tonic::Code;
 use tonic::transport::Channel;
 use crate::error::client_error::ClientError;
@@ -9,17 +11,19 @@ use crate::proto::{GetRequest,PutRequest,DeleteRequest,StatsRequest};
 use crate::proto::red_stone_client::RedStoneClient;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
-use dashmap::DashMap;
+use moka::future::Cache;
 
 #[derive(Clone)]
 pub struct RemoteCacheClient {
     // each client-server connection has a separate channel.
     clients: Arc<Vec<RedStoneClient<Channel>>>,
     next: Arc<AtomicUsize>,
-    l1_cache: Arc<DashMap<String,Arc<Tensor>>>
+    l1_cache: Cache<String,Arc<Tensor>>,
 }
 
 const POOL_SIZE: usize = 10;
+//256 bytes l1 cache
+const L1_MAX_BYTES: u64 = 256 * 1024 * 1024;
 impl RemoteCacheClient {
     pub async fn connect(addr: String) -> Result<Self, ClientError> {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
@@ -38,14 +42,19 @@ impl RemoteCacheClient {
         Ok(Self {
             clients: Arc::new(clients),
             next: Arc::new(AtomicUsize::new(0)),
-            l1_cache: Arc::new(DashMap::new())
+            l1_cache: Cache::builder()
+                .weigher(|_k: &String, v: &Arc<Tensor>| -> u32 {
+                    v.byte_size() as u32
+                })
+                .max_capacity(L1_MAX_BYTES)
+                .build()
         })
     }
 
     pub async fn get(&self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
 
         //first check if key exists in client cache, if not, send the request to server.
-        if let Some(tensor) = self.l1_cache.get(&key) {
+        if let Some(tensor) = self.l1_cache.get(&key).await {
             return Ok(Some(tensor.clone()));
         }
         let request = tonic::Request::new(GetRequest { key });
@@ -74,7 +83,7 @@ impl RemoteCacheClient {
                 let meta = proto_to_meta(&proto_meta)?;
                 let tensor = Tensor::new(meta, buffer.freeze()).map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?;
                 let tensor = Arc::new(tensor);
-                self.l1_cache.insert(key.clone(), tensor.clone());
+                self.l1_cache.insert(key.clone(), tensor.clone()).await;
                 Ok(Some(tensor))
             }
 
@@ -112,7 +121,7 @@ impl RemoteCacheClient {
 
         let mut client = self.client();
         client.put(request).await?;
-        self.l1_cache.insert(key, tensor);
+        self.l1_cache.insert(key, tensor).await;
         Ok(())
     }
 
@@ -123,7 +132,7 @@ impl RemoteCacheClient {
         let key = request.get_ref().key.clone();
         let mut client = self.client();
         client.delete(request).await?;
-        self.l1_cache.remove(&key);
+        self.l1_cache.remove(&key).await;
         Ok(())
     }
 

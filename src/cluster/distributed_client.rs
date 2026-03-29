@@ -24,6 +24,7 @@ pub struct DistributedClient {
     clients: Arc<RwLock<HashMap<String, RemoteCacheClient>>>,
     ring: Arc<RwLock<HashRing>>,
     client_config: ClusterClientConfig
+    
 }
 
 impl DistributedClient {

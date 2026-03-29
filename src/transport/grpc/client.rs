@@ -9,16 +9,19 @@ use crate::proto::{GetRequest,PutRequest,DeleteRequest,StatsRequest};
 use crate::proto::red_stone_client::RedStoneClient;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
+use moka::future::Cache;
 
 #[derive(Clone)]
 pub struct RemoteCacheClient {
-    // each client-server connection has a separate channel. total number of channels are equal
-    // to the number of servers
+    // each client-server connection has a separate channel.
     clients: Arc<Vec<RedStoneClient<Channel>>>,
     next: Arc<AtomicUsize>,
+    l1_cache: Cache<String,Arc<Tensor>>,
 }
 
 const POOL_SIZE: usize = 10;
+//256 KB l1 cache
+const L1_MAX_BYTES: u64 = 1024 * 1024;
 impl RemoteCacheClient {
     pub async fn connect(addr: String) -> Result<Self, ClientError> {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
@@ -34,12 +37,26 @@ impl RemoteCacheClient {
             clients.push(client);
         }
 
-        Ok(Self { clients: Arc::new(clients), next: Arc::new(AtomicUsize::new(0))})
+        Ok(Self {
+            clients: Arc::new(clients),
+            next: Arc::new(AtomicUsize::new(0)),
+            l1_cache: Cache::builder()
+                .weigher(|_k: &String, v: &Arc<Tensor>| -> u32 {
+                    v.byte_size().min(u32::MAX as usize) as u32
+                })
+                .max_capacity(L1_MAX_BYTES)
+                .build()
+        })
     }
 
     pub async fn get(&self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
 
+        //first check if key exists in client cache, if not, send the request to server.
+        if let Some(tensor) = self.l1_cache.get(&key).await {
+            return Ok(Some(tensor.clone()));
+        }
         let request = tonic::Request::new(GetRequest { key });
+        let key = request.get_ref().key.clone();
         let mut client = self.client();
         match client.get(request).await {
             Ok(response) => {
@@ -62,10 +79,10 @@ impl RemoteCacheClient {
                 let proto_meta = meta.ok_or_else(|| ClientError::ServerError("Missing metadata".into()))?;
 
                 let meta = proto_to_meta(&proto_meta)?;
-
                 let tensor = Tensor::new(meta, buffer.freeze()).map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?;
-
-                Ok(Some(Arc::new(tensor)))
+                let tensor = Arc::new(tensor);
+                self.l1_cache.insert(key.clone(), tensor.clone()).await;
+                Ok(Some(tensor))
             }
 
             Err(status) => match status.code() {
@@ -82,19 +99,27 @@ impl RemoteCacheClient {
     }
 
     pub async fn put(&self, key: String, meta: TensorMeta, data: Vec<u8>) -> Result<(), ClientError> {
-        let proto_meta = proto::TensorMeta { dtype: dtype_to_proto(meta.dtype()),
+        let proto_meta = proto::TensorMeta {
+            dtype: dtype_to_proto(meta.dtype()),
             shape: meta.shape().iter().map(|&s| s as u64).collect(),
             layout: layout_to_proto(meta.layout()),
         };
-        let bytes_data = Bytes::from(data);
+
+        let bytes = Bytes::from(data);
+
+        let tensor = Arc::new(Tensor::new(meta.clone(), bytes.clone())
+                .map_err(|_| ClientError::ServerError("Invalid tensor data".into()))?
+        );
+
         let request = tonic::Request::new(PutRequest {
-            //deep copy has cpu overhead
-            key,
+            key: key.clone(),
             meta: Some(proto_meta),
-            data: bytes_data
+            data: bytes,
         });
+
         let mut client = self.client();
         client.put(request).await?;
+        self.l1_cache.insert(key, tensor).await;
         Ok(())
     }
 
@@ -102,8 +127,10 @@ impl RemoteCacheClient {
         let request = tonic::Request::new(DeleteRequest {
             key,
         });
+        let key = request.get_ref().key.clone();
         let mut client = self.client();
         client.delete(request).await?;
+        self.l1_cache.remove(&key).await;
         Ok(())
     }
 

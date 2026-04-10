@@ -168,11 +168,10 @@ impl DistributedClient {
     }
 
     // WARNING: removing a node causes data loss in current implementation
-    pub async fn remove_node(&self, node: Node) -> Result<(), ClientError> {
-        let node_name = node.name.clone();
+    pub async fn remove_node(&self, node_name: String) -> Result<(), ClientError> {
         {
             let mut ring = self.ring.write();
-            ring.remove_node(Arc::from(node));
+            ring.remove_node(&node_name.clone());
         }
         let mut clients = self.clients.write();
         clients.remove(&node_name);
@@ -185,7 +184,17 @@ impl DistributedClient {
             //happy path
             return Ok(client.clone());
         }
-        let new_client = RemoteCacheClient::connect(node.address.clone()).await?;
+        let on_dead = Arc::new(move |dead_node: String| {
+            {
+                let mut ring = self.ring.write();
+                ring.remove_node(&dead_node);
+            }
+
+            self.remove_client(&dead_node);
+
+            println!("node {} removed", dead_node);
+        });
+        let new_client = RemoteCacheClient::connect(node.address.clone(),node.name.clone(),on_dead).await?;
 
         let mut clients = self.clients.write();
 
@@ -195,6 +204,10 @@ impl DistributedClient {
 
         clients.insert(node.name.clone(), new_client.clone());
         Ok(new_client)
+    }
+
+    fn remove_client(&self, node_name: &String) {
+        self.clients.write().remove(node_name);
     }
 
 

@@ -171,7 +171,7 @@ impl DistributedClient {
     pub async fn remove_node(&self, node_name: String) -> Result<(), ClientError> {
         {
             let mut ring = self.ring.write();
-            ring.remove_node(&node_name.clone());
+            ring.remove_node(&node_name);
         }
         let mut clients = self.clients.write();
         clients.remove(&node_name);
@@ -193,7 +193,6 @@ impl DistributedClient {
                 let mut ring = ring.write();
                 ring.remove_node(&dead_node);
             }
-
             {
                 let mut clients = clients.write();
                 clients.remove(&dead_node);

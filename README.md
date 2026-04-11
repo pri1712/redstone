@@ -25,11 +25,12 @@ A high-performance, distributed tensor cache built in Rust, optimized for ML inf
 - Better replication and data availability
 
 **Known Limitations:**
+- Extremely simple design (will not scale for very large tensors)
 - No replication
 - Data loss in case of server death
 - streaming gRPC for all tensor sizes
 - SerDe ops need copies
-- no client 
+- no client
 
 
 ## Quick Start

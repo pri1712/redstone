@@ -28,6 +28,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              cache_size as f64 / 1024.0 / 1024.0 / 1024.0);
 
     start_server(addr, cache_size).await?;
-
+    
     Ok(())
 }

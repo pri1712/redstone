@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use bytes::Bytes;
 use tonic::Code;
 use tonic::transport::Channel;
@@ -10,20 +10,24 @@ use crate::proto::red_stone_client::RedStoneClient;
 use crate::tensor::meta::{DType, StorageLayout, TensorMeta};
 use crate::tensor::tensor::Tensor;
 use moka::future::Cache;
-
+use tokio::time::{interval, Duration, timeout};
 #[derive(Clone)]
 pub struct RemoteCacheClient {
-    // each client-server connection has a separate channel.
+    // each client-server connection has multiple channels, for max throughput.
     clients: Arc<Vec<RedStoneClient<Channel>>>,
     next: Arc<AtomicUsize>,
     l1_cache: Cache<String,Arc<Tensor>>,
+    server_name: String,
+    on_dead: Arc<dyn Fn(String) + Send + Sync>,
+    is_dead: Arc<AtomicBool>,
+
 }
 
 const POOL_SIZE: usize = 10;
 //256 KB l1 cache
 const L1_MAX_BYTES: u64 = 1024 * 1024;
 impl RemoteCacheClient {
-    pub async fn connect(addr: String) -> Result<Self, ClientError> {
+    pub async fn connect(addr: String, name: String, on_dead: Arc<dyn Fn(String) + Send + Sync>) -> Result<Self, ClientError> {
         let url = if addr.starts_with("http://") || addr.starts_with("https://") {
             addr
         } else {
@@ -37,18 +41,44 @@ impl RemoteCacheClient {
             clients.push(client);
         }
 
-        Ok(Self {
+        let this = Self {
             clients: Arc::new(clients),
             next: Arc::new(AtomicUsize::new(0)),
-            l1_cache: Cache::builder()
-                .weigher(|_k: &String, v: &Arc<Tensor>| -> u32 {
-                    v.byte_size().min(u32::MAX as usize) as u32
-                })
-                .max_capacity(L1_MAX_BYTES)
-                .build()
-        })
+            l1_cache: Cache::builder().max_capacity(L1_MAX_BYTES).build(),
+            server_name: name,
+            on_dead,
+            is_dead: Arc::new(AtomicBool::new(false)),
+        };
+
+        this.heartbeat();
+
+        Ok(this)
+
     }
 
+    fn heartbeat(&self) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            let mut heartbeat_ticker = interval(Duration::from_secs(30));
+            loop {
+                heartbeat_ticker.tick().await;
+                if this.is_dead.load(Ordering::Relaxed) {
+                    break;
+                }
+                let res = timeout(Duration::from_secs(5), this.get_stats()).await;
+
+                if res.is_err() || res.unwrap().is_err() {
+                    let already_dead =
+                        this.is_dead.swap(true, Ordering::SeqCst);
+
+                    if !already_dead {
+                        (this.on_dead)(this.server_name.clone());
+                    }
+                    break;
+                }
+            }
+        });
+    }
     pub async fn get(&self, key: String) -> Result<Option<Arc<Tensor>>, ClientError> {
 
         //first check if key exists in client cache, if not, send the request to server.

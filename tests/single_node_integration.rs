@@ -17,8 +17,8 @@ async fn single_node_put_get_delete_flow() {
     let addr = server_setup().await;
 
     sleep(Duration::from_millis(200)).await;
-
-    let mut client = RemoteCacheClient::connect(addr)
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+    let mut client = RemoteCacheClient::connect(addr,"node1".to_string(),on_dead)
         .await
         .expect("Client failed to connect");
 
@@ -81,8 +81,9 @@ async fn duplicate_put_fails() {
 
     let addr = server_setup().await;
     sleep(Duration::from_millis(200)).await;
-
-    let mut client = RemoteCacheClient::connect(addr)
+    
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+    let mut client = RemoteCacheClient::connect(addr,"node1".to_string(),on_dead)
         .await
         .expect("Client failed");
 
@@ -116,8 +117,8 @@ async fn test_oom_put() {
     let addr = server_setup().await;
     //allows server to initialize
     sleep(Duration::from_millis(200)).await;
-
-    let mut client = RemoteCacheClient::connect(addr)
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+    let mut client = RemoteCacheClient::connect(addr,"node1".to_string(),on_dead)
         .await
         .expect("Client failed to connect");
 
@@ -154,8 +155,8 @@ async fn test_invalid_tensor_data() {
 
     let addr = server_setup().await;
     sleep(Duration::from_millis(200)).await;
-
-    let mut client = RemoteCacheClient::connect(addr)
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+    let mut client = RemoteCacheClient::connect(addr,"node1".to_string(),on_dead)
         .await
         .expect("Client failed");
 
@@ -184,11 +185,11 @@ async fn test_concurrent_clients_race_conditions() {
     sleep(Duration::from_millis(200)).await;
 
     let addr_arc = Arc::new(addr);
-
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
     let writer = {
         let addr = addr_arc.clone();
         tokio::spawn(async move {
-            let mut client = RemoteCacheClient::connect((*addr).clone())
+            let mut client = RemoteCacheClient::connect((*addr).clone(),"node1".to_string(),on_dead)
                 .await
                 .expect("Writer failed");
 
@@ -204,11 +205,11 @@ async fn test_concurrent_clients_race_conditions() {
             }
         })
     };
-
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
     let reader = {
         let addr = addr_arc.clone();
         tokio::spawn(async move {
-            let mut client = RemoteCacheClient::connect((*addr).clone())
+            let mut client = RemoteCacheClient::connect((*addr).clone(),"node1".to_string(),on_dead)
                 .await
                 .expect("Reader failed");
 
@@ -221,8 +222,9 @@ async fn test_concurrent_clients_race_conditions() {
 
     writer.await.unwrap();
     reader.await.unwrap();
-
-    let mut client = RemoteCacheClient::connect((*addr_arc).clone())
+    
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+    let mut client = RemoteCacheClient::connect((*addr_arc).clone(),"node1".to_string(),on_dead)
         .await
         .expect("Final client failed");
 

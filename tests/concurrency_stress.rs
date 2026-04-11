@@ -16,9 +16,7 @@ fn random_port() -> u16 {
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn stress_test_concurrent_clients() {
 
-   let addr = server_setup().await;
-
-    sleep(Duration::from_millis(300)).await;
+    let addr = server_setup().await;
 
     let addr_arc = Arc::new(addr);
 
@@ -28,7 +26,10 @@ async fn stress_test_concurrent_clients() {
         let addr = addr_arc.clone();
 
         let handle = tokio::spawn(async move {
-            let mut client = RemoteCacheClient::connect((*addr).clone())
+
+            let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+
+            let client = RemoteCacheClient::connect((*addr).clone(), "node1".to_string(), on_dead, )
                 .await
                 .expect("Client connect failed");
 
@@ -44,15 +45,9 @@ async fn stress_test_concurrent_clients() {
                 let bytes = vec![0u8; 16];
 
                 match op % 3 {
-                    0 => {
-                        let _ = client.put(key.clone(), meta, bytes).await;
-                    }
-                    1 => {
-                        let _ = client.get(key.clone()).await;
-                    }
-                    _ => {
-                        let _ = client.delete(key.clone()).await;
-                    }
+                    0 => { let _ = client.put(key.clone(), meta, bytes).await; }
+                    1 => { let _ = client.get(key.clone()).await; }
+                    _ => { let _ = client.delete(key.clone()).await; }
                 }
             }
         });
@@ -64,7 +59,9 @@ async fn stress_test_concurrent_clients() {
         handle.await.expect("Thread panicked");
     }
 
-    let mut client = RemoteCacheClient::connect((*addr_arc).clone())
+    let on_dead: Arc<dyn Fn(String) + Send + Sync> = Arc::new(|_| {});
+
+    let client = RemoteCacheClient::connect((*addr_arc).clone(), "node1".to_string(), on_dead)
         .await
         .expect("Final client failed");
 
@@ -75,7 +72,8 @@ async fn stress_test_concurrent_clients() {
     println!("Hits: {}", stats.hits);
     println!("Misses: {}", stats.misses);
     println!("Evictions: {}", stats.evictions);
-    assert!(stats.hits+stats.misses>0);
+
+    assert!(stats.hits + stats.misses > 0);
     assert!(stats.memory_used <= stats.memory_limit);
 }
 async fn server_setup() -> String {

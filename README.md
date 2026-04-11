@@ -4,7 +4,7 @@
 
 A high-performance, distributed tensor cache built in Rust, optimized for ML inference and training workloads.
 
-## Status
+## Status - ALPHA 
 
 **Complete:**
 - Single-node LRU cache with memory-based eviction
@@ -14,15 +14,15 @@ A high-performance, distributed tensor cache built in Rust, optimized for ML inf
 - Basic put/get/delete/observability operations
 - Consistent hashing for sharding
 - Multi-node cluster support
-
-**In Progress:**
-- Client side caching
-- Improved metrics
+-  Client side caching
+-  Basic Control plane for cluster control
 
 **Planned:**
 - Compression
 - Memory tiering
 - Zero copy serialization/deserialization
+- Metrics for observability into cache ops
+- Better replication and data availability
 
 ## Quick Start
 

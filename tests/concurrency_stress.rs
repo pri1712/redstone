@@ -17,7 +17,7 @@ fn random_port() -> u16 {
 async fn stress_test_concurrent_clients() {
 
     let addr = server_setup().await;
-
+    sleep(Duration::from_millis(300)).await;
     let addr_arc = Arc::new(addr);
 
     let mut handles = vec![];

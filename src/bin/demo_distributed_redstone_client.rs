@@ -1,6 +1,7 @@
 use redstone::cluster::config::config_file::ClusterClientFileConfig;
 use redstone::cluster::distributed_client::DistributedClient;
 use redstone::tensor::meta::{TensorMeta, DType, StorageLayout};
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -109,8 +110,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\nAll distributed examples completed.");
+    println!("Client entering heartbeat test loop");
 
-    Ok(())
+
+
+    loop {
+        let _ = client.get("test_tensor").await;
+
+        match client.get_per_server_stats().await {
+            Ok(stats) => {
+                println!("---- cluster stats ----");
+                for (i, stat) in stats.iter().enumerate() {
+                    println!(
+                        "node {} -> entries={}, memory={}, hit_rate={:.2}%",
+                        i,
+                        stat.entries,
+                        stat.memory_used,
+                        stat.hit_rate() * 100.0
+                    );
+                }
+            }
+            Err(e) => {
+                println!("stats error: {:?}", e);
+            }
+        }
+        sleep(Duration::from_secs(5)).await;
+    }
 }
 
 fn f32_to_bytes(data: &[f32]) -> Vec<u8> {

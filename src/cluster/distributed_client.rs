@@ -180,21 +180,32 @@ impl DistributedClient {
 
     // helper functions
     async fn get_or_create_client(&self, node: &Node) -> Result<RemoteCacheClient, ClientError> {
+
         if let Some(client) = self.clients.read().get(&node.name) {
-            //happy path
             return Ok(client.clone());
         }
+
+        let ring = self.ring.clone();
+        let clients = self.clients.clone();
+
         let on_dead = Arc::new(move |dead_node: String| {
             {
-                let mut ring = self.ring.write();
+                let mut ring = ring.write();
                 ring.remove_node(&dead_node);
             }
 
-            self.remove_client(&dead_node);
-
+            {
+                let mut clients = clients.write();
+                clients.remove(&dead_node);
+            }
             println!("node {} removed", dead_node);
         });
-        let new_client = RemoteCacheClient::connect(node.address.clone(),node.name.clone(),on_dead).await?;
+
+        let new_client = RemoteCacheClient::connect(
+            node.address.clone(),
+            node.name.clone(),
+            on_dead,
+        ).await?;
 
         let mut clients = self.clients.write();
 
@@ -205,12 +216,6 @@ impl DistributedClient {
         clients.insert(node.name.clone(), new_client.clone());
         Ok(new_client)
     }
-
-    fn remove_client(&self, node_name: &String) {
-        self.clients.write().remove(node_name);
-    }
-
-
 }
 #[cfg(test)]
 //these tests only test basic code functionality. integration tests are in distributed_client_integration.rs
